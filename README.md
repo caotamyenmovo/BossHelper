@@ -11,7 +11,7 @@
 
 ## 项目介绍
 
-Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率, 技术栈使用WXT + Vue3 + NuxtUI@4 + TailwindCSS@4, 开源在 Github 欢迎前来Pr
+Boss直聘助手, 皆在减少投递简历的麻烦, 和提高投递简历的效率, 技术栈使用WXT + Vue3 + NuxtUI@4 + TailwindCSS@4, 开源在 Github
 
 > 本项目处于积极维护状态, 一直很忙所以拖了比较久才开源，抱歉了~
 
@@ -43,8 +43,6 @@ https://t.me/ocyss_boss_helper
 Github开源地址: <https://github.com/ocyss/boss-helper>
 
 飞书反馈问卷(匿名): <https://gai06vrtbc0.feishu.cn/share/base/form/shrcnmEq2fxH9hM44hqEnoeaj8g>
-
-> 每个提交都会给我发通知，我看见就会评论的形式回复 一般 1-2天
 
 飞书问卷结果: <https://gai06vrtbc0.feishu.cn/share/base/view/shrcnrg8D0cbLQc89d7Jj7AZgMc>
 
@@ -81,15 +79,6 @@ greasyfork地址(0.2旧版本): <https://greasyfork.org/zh-CN/scripts/491340>
   - [x] 多账号管理 (废弃, 改为多配置切换)
   - [ ] 聊天阻止发送已读
   - [ ] boss消息弹窗
-
-## 鸣谢
-
-- <https://github.com/yangfeng20/boss_batch_push>
-- <https://github.com/lisonge/vite-plugin-monkey>
-- <https://github.com/chatanywhere/GPT_API_free>
-
-- <https://uiverse.io/>
-- <https://www.runoob.com/manual/mqtt/protocol/MQTT-3.1.1-CN.pdf>
 
 ## 类似项目
 

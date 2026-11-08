@@ -14,15 +14,6 @@
             作者:&#12288;
             <ULink to="https://github.com/Ocyss" target="_blank"> Ocyss_04 </ULink>
           </div>
-          <div data-help="感谢每一个人的付出">
-            感谢贡献(无顺序之分):&#12288;
-            <ULink to="https://github.com/yangfeng20" target="_blank"> yangfeng20 </ULink>
-            <ULink to="https://github.com/engvuchen" target="_blank"> engvuchen </ULink>
-            <ULink to="https://github.com/PluviaCon" target="_blank"> PluviaCon </ULink>
-            <ULink to="https://github.com/a2urey" target="_blank"> a2urey </ULink>
-            <ULink to="https://github.com/Lqqqqqq123123" target="_blank"> Lqqqqqq123123 </ULink>
-            <ULink to="https://github.com/FaintFlower" target="_blank"> FaintFlower </ULink>
-          </div>
         </div>
       </div>
       <div data-help="记得来个Star或者好评吧" style="margin-top: 10px">

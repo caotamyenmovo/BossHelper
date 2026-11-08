@@ -291,7 +291,7 @@ function openStore() {
           2. 暂时不维护文档(维护了也不会有多少人看), 所以配置会添加帮助信息, 足够理解用途,
           不理解可反馈进行文案优化
           <br />
-          3. 非常欢迎大家来提优化意见, pr提交(需参考CONTRIBUTING), tg交流群交流
+          3. 如有问题可通过 tg交流群交流
           <ULink to="https://t.me/ocyss_boss_helper" target="_blank">
             https://t.me/ocyss_boss_helper
           </ULink>
