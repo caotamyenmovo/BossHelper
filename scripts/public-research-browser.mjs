@@ -113,7 +113,14 @@ try {
     document.body.innerHTML =
       '<section class="note-item"><a class="cover" href="/search_result/1234567890abcdef12345678?xsec_token=fixture"></a><a class="title" href="/search_result/1234567890abcdef12345678?xsec_token=fixture">安全工程师简历：项目经历写法</a><div class="author"><span class="name">测试作者</span></div></section>'
   })
-  await waitText('正在自动读取第 1/1 篇')
+  await waitText('安全工程师简历：项目经历写法')
+  assert(
+    !(await browser.pages()).some((tab) =>
+      tab.url().includes('/search_result/1234567890abcdef12345678'),
+    ),
+    'Search results must not automatically open the first note',
+  )
+  await click('读取正文和评论')
   assert(
     await page.$eval('.career-workbench', (el) =>
       el.innerText.includes('搜索卡片标题（未读取正文）'),
@@ -126,7 +133,7 @@ try {
     (target) =>
       target.type() === 'page' && target.url().includes('/search_result/1234567890abcdef12345678'),
   )
-  assert.equal(noteTarget, xhsTarget, 'Automatic note reading must reuse the search tab')
+  assert.notEqual(noteTarget, xhsTarget, 'The selected note opens only after the manual read click')
   const note = await noteTarget.page()
   await note.waitForSelector('.login-container')
   await note.evaluate(() => {
@@ -141,7 +148,7 @@ try {
       '<div class="end-container">没有更多评论</div></div></div>'
   })
   await page.bringToFront()
-  await waitText('自动读取完成：取得 1 篇正文')
+  await waitText('所选帖子读取完成：已取得 1 篇正文和评论')
   await waitText('正文依据：说明本人职责、检查范围和实际成果。')
   assert.deepEqual(
     await page.$$eval('[data-testid="source-comments"] li', (items) =>
@@ -175,7 +182,7 @@ try {
   await waitText('小红书页面显示安全限制或网络风险')
   assert.equal(errors.length, 0, errors.join('\n'))
   console.log(
-    'PASS: public no-note diagnostics, webpage search/login continuation, title-only blocking, automatic body and top-five comment reading without a second click, saved evidence recovery, stale-source clearing and website block reporting in the production extension.',
+    'PASS: public no-note diagnostics, webpage search/login continuation, title-only blocking, manual body and top-five comment reading, saved evidence recovery, stale-source clearing and website block reporting in the production extension.',
   )
 } finally {
   await browser.close()

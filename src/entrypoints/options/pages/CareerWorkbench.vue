@@ -6,7 +6,7 @@ import type { ParsedResume } from '@/composables/careerAi'
 import { runCareerCompletion } from '@/composables/careerCompletion'
 import type { CareerCompletionOptions } from '@/composables/careerCompletion'
 import { useConf } from '@/composables/conf'
-import { retrievePublicSource, searchPublicXiaohongshu } from '@/composables/publicResearch'
+import { searchPublicXiaohongshu } from '@/composables/publicResearch'
 import type { PublicCareerSource } from '@/composables/publicResearch'
 import { extractResumeText } from '@/composables/resumeImport'
 import { createCareerWorkbench, createEmptyResumeProfile } from '@/composables/useCareerWorkbench'
@@ -211,12 +211,10 @@ async function searchResearch() {
   try {
     await xhsResearch.cancel()
     const results = await searchPublicXiaohongshu(role)
-    const sources = await Promise.all(results.slice(0, 5).map(retrievePublicSource))
     if (epoch !== researchEpoch) return
-    researchSources.value = sources
-    researchWebBusy.value = true
-    const task = await xhsResearch.readSources(role, jsonClone(sources))
-    researchNotice.value = task.message
+    researchSources.value = results.slice(0, 8)
+    researchSourceRole.value = role
+    researchNotice.value = `检索完成：找到 ${researchSources.value.length} 条帖子。请手动点击感兴趣帖子下方的“读取正文和评论”。`
   } catch (cause) {
     if (epoch === researchEpoch) {
       researchWebBusy.value = false
@@ -314,6 +312,11 @@ async function createResearchAdvice() {
       : '请先检索并读取帖子正文或导入内容。只有标题时无法生成有依据的修改意见。'
     return
   }
+  const role = researchRole.value.trim()
+  if (!role) {
+    error.value = '请填写目标岗位后再生成建议。'
+    return
+  }
   const controller = new AbortController()
   researchAdviceController = controller
   researchAdviceBusy.value = true
@@ -322,7 +325,7 @@ async function createResearchAdvice() {
   error.value = ''
   try {
     researchSummary.value = await assistant.summarizeResearch(
-      researchSourceRole.value,
+      role,
       researchSources.value,
       selectedProfile.value ?? undefined,
       {
@@ -1075,7 +1078,8 @@ onBeforeUnmount(() => {
             }}
           </p>
           <p class="text-sm text-muted">
-            检索后自动逐帖读取正文和点赞数最高的 5 条已加载评论，再让 AI 对照你的简历给出修改意见。
+            检索只显示帖子卡片。点击单条帖子下方的“读取正文和评论”后，才会打开该帖子并读取正文和已加载评论中的前
+            5 条高赞评论。
           </p>
           <UButton
             label="根据检索内容和简历生成修改意见"
@@ -1095,7 +1099,7 @@ onBeforeUnmount(() => {
             {{
               researchContentCount
                 ? `已取得 ${researchContentCount} 条正文或摘要，将与当前简历一起提交给 AI。`
-                : '尚无可用于分析的内容。点击检索后会自动读取正文和评论，也可在下方粘贴内容。'
+                : '尚无可用于分析的内容。请先检索，再手动读取帖子正文和评论，或在下方粘贴内容。'
             }}
           </p>
         </div>
@@ -1154,18 +1158,19 @@ onBeforeUnmount(() => {
           />
         </div>
         <div v-if="researchSummary" class="space-y-2">
-          <h4 class="text-sm font-semibold">
-            基于检索内容的简历修改意见 · {{ researchSourceRole }}
-          </h4>
-          <pre data-testid="research-advice" class="whitespace-pre-wrap text-sm">{{
-            researchSummary
-          }}</pre>
+          <h4 class="text-sm font-semibold">基于检索内容的简历修改意见 · {{ researchRole }}</h4>
+          <div
+            data-testid="research-advice"
+            class="max-w-none rounded border border-default bg-elevated/30 p-4 font-sans text-sm leading-6 whitespace-pre-wrap wrap-anywhere"
+          >
+            {{ researchSummary }}
+          </div>
         </div>
       </div>
       <section v-if="researchSources.length" class="space-y-3 border-t border-default pt-4">
-        <h4 class="text-sm font-semibold">检索来源 · {{ researchSourceRole }}</h4>
+        <h4 class="text-sm font-semibold">检索来源 · {{ researchRole }}</h4>
         <p class="text-sm text-muted">
-          正文和评论会自动读取。评论按页面显示点赞数排序，取已加载内容中前 5
+          点击单条帖子下方的按钮读取正文和评论。评论按页面显示点赞数排序，取已加载内容中前 5
           条；仅有标题的帖子不参与 AI 分析。
         </p>
         <article
@@ -1208,7 +1213,7 @@ onBeforeUnmount(() => {
           <p v-if="source.readError" class="mt-2 text-sm text-warning">{{ source.readError }}</p>
           <UButton
             v-if="source.contentKind !== 'pasted'"
-            label="重新读取正文和评论"
+            :label="source.contentKind === 'visible-note' ? '重新读取正文和评论' : '读取正文和评论'"
             class="mt-2"
             size="sm"
             variant="outline"

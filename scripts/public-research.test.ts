@@ -176,10 +176,11 @@ function fakeApi() {
     setUrl: (value: string) => {
       currentUrl = value
     },
+    currentUrl: () => currentUrl,
   }
 }
 
-test('web search survives recreation and automatically opens notes after login', async () => {
+test('web search keeps result cards until the user selects a note to read', async () => {
   const fake = fakeApi()
   const service = createXiaohongshuResearch(fake.api)
   const started = await service.start('安全工程师')
@@ -188,10 +189,14 @@ test('web search survives recreation and automatically opens notes after login',
   const recreated = createXiaohongshuResearch(fake.api)
   fake.setResult(readXiaohongshuPage(doc(cards()), searchUrl))
   const result = await recreated.poll()
-  expect(result?.status).toBe('pending')
-  expect(result?.noteUrl).toBe(noteUrl)
+  expect(result?.status).toBe('ready')
+  expect(result?.noteUrl).toBeUndefined()
   expect(result?.role).toBe('安全工程师')
   expect(fake.data[XHS_RESEARCH_KEY].sources).toHaveLength(1)
+  expect(result?.message).toContain('手动点击')
+  expect(fake.currentUrl()).toBe(searchUrl)
+  await recreated.readNote('安全工程师', result!.sources[0]!, result!.sources)
+  expect(fake.currentUrl()).toBe(noteUrl)
   fake.setResult(
     readXiaohongshuPage(
       doc('<div id="noteContainer"><div id="detail-desc">正文</div></div>'),
@@ -274,51 +279,4 @@ test('does not attach the wrong note body to the selected source and retains car
   expect(failed?.status).toBe('ready')
   expect(failed?.sources[0].readError).toContain('超时')
   expect(failed?.sources[0].contentKind).toBe('visible-card')
-})
-
-test('automatically advances through the persisted queue and keeps a failed note alongside successes', async () => {
-  const fake = fakeApi()
-  const service = createXiaohongshuResearch(fake.api)
-  const first = readXiaohongshuPage(doc(cards()), searchUrl).sources[0]
-  const second = { ...first, url: 'https://www.xiaohongshu.com/explore/aaaaaaaaaaaaaaaaaaaaaaaa' }
-  const started = await service.readSources('安全工程师', [first, second])
-  expect(started.total).toBe(2)
-  const note = {
-    ...first,
-    contentKind: 'visible-note',
-    excerpt: '正文',
-    comments: [{ id: 'c1', author: '评论人', text: '高赞建议', likes: 100, likesText: '100' }],
-    commentCoverage: { status: 'loading', observed: 1, unknownLikes: 0, message: '加载评论' },
-  }
-  fake.setResult({ status: 'ready', sources: [note] })
-  expect((await service.poll())?.completed).toBe(0)
-  note.commentCoverage.status = 'end'
-  expect((await service.poll())?.noteUrl).toBe(second.url)
-  const restored = createXiaohongshuResearch(fake.api)
-  fake.setResult({ status: 'empty', message: '帖子已删除', sources: [] })
-  const finished = await restored.poll()
-  expect(finished?.status).toBe('ready')
-  expect(finished?.completed).toBe(2)
-  expect(finished?.sources[0].comments?.[0].text).toBe('高赞建议')
-  expect(finished?.sources[1].readError).toBe('帖子已删除')
-})
-
-test('stopping an automatic queue preserves evidence and cannot advance later', async () => {
-  const fake = fakeApi()
-  const service = createXiaohongshuResearch(fake.api)
-  const first = readXiaohongshuPage(doc(cards()), searchUrl).sources[0]
-  await service.readSources('安全工程师', [first])
-  const note = {
-    ...first,
-    contentKind: 'visible-note',
-    excerpt: '部分正文',
-    commentCoverage: { status: 'loading', observed: 0, unknownLikes: 0, message: '加载评论' },
-  }
-  fake.setResult({ status: 'ready', sources: [note] })
-  await service.poll()
-  await service.cancel(true)
-  const stopped = await createXiaohongshuResearch(fake.api).poll()
-  expect(stopped?.status).toBe('ready')
-  expect(stopped?.sources[0].excerpt).toBe('部分正文')
-  expect(stopped?.pendingUrls).toEqual([])
 })

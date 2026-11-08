@@ -86,8 +86,8 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
       completed: 0,
       total: urls?.length,
       message: urls?.length
-        ? `正在自动读取第 1/${urls.length} 篇正文及高赞评论…`
-        : '已打开小红书搜索页；如需登录，请在该页面完成登录。取得结果后将自动逐帖读取正文和高赞评论。',
+        ? '正在读取所选帖子正文和高赞评论…'
+        : '已打开小红书搜索页；如需登录，请在该页面完成登录。搜索结果出现后，手动点击帖子下方的“读取正文和评论”。',
     })
     try {
       await api.tabs.update(tab.id, { url: task.noteUrl ?? buildXiaohongshuSearchUrl(role) })
@@ -97,53 +97,20 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
     }
     return task
   }
-  async function next(task: XiaohongshuResearchTask, sources: PublicCareerSource[]) {
-    const pending = task.pendingUrls ?? []
-    const completed = (task.completed ?? 0) + 1
-    const nextTask = { ...task, sources, completed }
-    if (!pending.length) {
-      const bodies = sources.filter((source) => source.contentKind === 'visible-note').length
-      const failures = sources.filter((source) => source.readError).length
-      return update({
-        ...nextTask,
-        status: 'ready',
-        pendingUrls: [],
-        message: `自动读取完成：取得 ${bodies} 篇正文及可读取的高赞评论${failures ? `，${failures} 篇读取受限` : ''}。可结合简历生成修改意见。`,
-      })
-    }
-    const nextTaskSaved = await update({
-      ...nextTask,
-      noteUrl: pending[0],
-      pendingUrls: pending.slice(1),
-      expiresAt: now() + 60_000,
-      message: `正在自动读取第 ${completed + 1}/${task.total ?? completed + pending.length} 篇正文及高赞评论…`,
+  async function finishRead(task: XiaohongshuResearchTask, sources: PublicCareerSource[]) {
+    const bodies = sources.filter((source) => source.contentKind === 'visible-note').length
+    const failures = sources.filter((source) => source.readError).length
+    return update({
+      ...task,
+      sources,
+      completed: (task.completed ?? 0) + 1,
+      pendingUrls: [],
+      status: 'ready',
+      message: `所选帖子读取完成：已取得 ${bodies} 篇正文和评论${failures ? `，${failures} 篇读取受限` : ''}。其他帖子可分别手动读取。`,
     })
-    if (!nextTaskSaved || nextTaskSaved.token !== task.token) return nextTaskSaved
-    try {
-      await api.tabs.update(task.tabId, { url: pending[0] })
-    } catch {
-      return update({
-        ...nextTaskSaved,
-        status: 'error',
-        message: '读取标签页已关闭，已保留取得的内容。',
-      })
-    }
-    return nextTaskSaved
   }
   return {
     start: (role: string) => serial(() => begin(role)),
-    readSources: (role: string, sources: PublicCareerSource[]) =>
-      serial(() => {
-        const urls = [
-          ...new Set(
-            sources
-              .map((source) => normalizeXiaohongshuNoteUrl(source.url))
-              .filter((url): url is string => !!url),
-          ),
-        ]
-        if (!urls.length) throw new Error('没有可以读取的小红书帖子链接。')
-        return begin(role, sources, urls)
-      }),
     readNote: (role: string, source: PublicCareerSource, sources: PublicCareerSource[]) =>
       serial(() => {
         const url = normalizeXiaohongshuNoteUrl(source.url)
@@ -179,7 +146,7 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
           const sources = stopLoading(task.sources).map((source) =>
             sameNote(source.url, task.noteUrl!) ? { ...source, readError: message } : source,
           )
-          return next(task, sources)
+          return finishRead(task, sources)
         }
         if (task.overallExpiresAt && now() >= task.overallExpiresAt)
           return update({
@@ -187,10 +154,18 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
             status: 'ready',
             sources: stopLoading(task.sources),
             pendingUrls: [],
-            message: '自动读取达到总时长上限，已保留取得的正文和评论。其余帖子可以单独重试。',
+            message: '读取达到时长上限，已保留已取得的内容。其他帖子可分别手动读取。',
           })
         if (now() >= task.expiresAt)
           return failure('等待小红书页面超时。请确认页面可正常阅读后重试。')
+        if (!task.noteUrl && task.pendingUrls?.length) {
+          return update({
+            ...task,
+            status: 'ready',
+            pendingUrls: [],
+            message: '已停止旧版自动读取队列。请手动点击每条帖子下方的“读取正文和评论”。',
+          })
+        }
         let tab
         try {
           tab = await api.tabs.get(task.tabId)
@@ -212,7 +187,7 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
             return update({
               ...task,
               status: 'error',
-              message: '读取标签页已离开小红书，已停止自动读取。',
+              message: '读取标签页已离开小红书，已停止读取。',
             })
           const keyword = url.searchParams.get('keyword')
           if (
@@ -250,16 +225,13 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
         }
         if (page.status === 'ready' && page.sources.length) {
           if (!task.noteUrl) {
-            const urls = page.sources
-              .map((source) => normalizeXiaohongshuNoteUrl(source.url))
-              .filter((url): url is string => !!url)
-            if (!urls.length)
-              return update({ ...task, status: 'error', message: '没有可以读取的帖子链接。' })
-            // Search and subsequent notes share one tab; the persisted queue survives options reloads.
-            return next(
-              { ...task, pendingUrls: urls, completed: -1, total: urls.length },
-              page.sources,
-            )
+            return update({
+              ...task,
+              status: 'ready',
+              sources: page.sources,
+              pendingUrls: [],
+              message: `检索完成：找到 ${page.sources.length} 条帖子。请手动点击感兴趣帖子下方的“读取正文和评论”。`,
+            })
           }
           const requested = new URL(task.noteUrl)
           const note = page.sources.find(
@@ -275,9 +247,9 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
             return update({
               ...task,
               sources,
-              message: `正在自动读取第 ${(task.completed ?? 0) + 1}/${task.total ?? 1} 篇：${note.commentCoverage.message}`,
+              message: `正在读取所选帖子：${note.commentCoverage.message}`,
             })
-          return next(task, sources)
+          return finishRead(task, sources)
         }
         if (page.status === 'blocked')
           return update({

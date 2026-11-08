@@ -26,7 +26,10 @@ const server = createServer(async (req, res) => {
     path: req.url,
     prompt: JSON.stringify(body.messages),
   })
-  const message = scenario === 'success' ? '建议：补充项目职责和实际成果。' : '已收到的部分建议。'
+  const message =
+    scenario === 'success'
+      ? '目标岗位：安全工程师\n\n匹配结论\n简历包含安全巡检经历，但职责和成果还不够具体。\n\n优先修改建议（最多 5 条）\n建议 1｜项目经历\n简历原文：参与安全巡检项目\n问题：没有说明本人负责范围和结果。\n来源依据：来源 1《项目经历写法》，正文强调职责与可核查成果。\n建议改写：建议：补充项目职责和实际成果。\n待补充：无\n\n求职方向与下一步\n补充检查范围和可核验结果。'
+      : '已收到的部分建议。'
   if (!body.stream) {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.write(
@@ -132,7 +135,7 @@ try {
           location: '上海',
           education: '本科',
           workYears: '',
-          targetRoles: ['安全工程师'],
+          targetRoles: ['简历中保存的旧岗位'],
           workExperience: [],
           internshipExperience: [],
           educationExperience: [],
@@ -247,10 +250,17 @@ try {
   assert(requests[0].prompt.includes('12000'))
   assert(requests[0].prompt.includes('不能声称是全帖最高赞'))
   assert(requests[0].prompt.includes('安全工程师'))
+  assert(requests[0].prompt.includes('安全工程师'))
+  assert(!requests[0].prompt.includes('简历中保存的旧岗位'))
+  await page.screenshot({
+    path: resolve('.scratch/research-advice-formatted-preview.png'),
+    fullPage: true,
+  })
   assert(
     requests[0].prompt.includes('https://www.xiaohongshu.com/explore/1234567890abcdef12345678'),
   )
-  assert(requests[0].prompt.includes('【简历位置及原文】【问题】【来源依据】【建议改写】'))
+  assert(requests[0].prompt.includes('建议改写：给出可直接替换的文字'))
+  assert(requests[0].prompt.includes('必须严格使用用户填写的目标岗位“安全工程师”'))
 
   scenario = 'cancel'
   await click('根据检索内容和简历生成修改意见')
