@@ -82,14 +82,6 @@ greasyfork地址(0.2旧版本): <https://greasyfork.org/zh-CN/scripts/491340>
   - [ ] 聊天阻止发送已读
   - [ ] boss消息弹窗
 
-## 参与贡献
-
-1. Fork 本仓库并克隆到本地。
-2. 在新分支上进行您的更改：`git checkout -b 您的分支名称`
-3. 提交更改：`git commit -am '描述您的更改'`
-4. 推送更改到您的 Fork：`git push origin 您的分支名称`
-5. 提交 Pull 请求。
-
 ## 鸣谢
 
 - <https://github.com/yangfeng20/boss_batch_push>
