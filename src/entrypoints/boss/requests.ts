@@ -9,11 +9,11 @@ import {
 } from '@/composables/useApplying/deliverError'
 import { calculateFileMD5 } from '@/utils/file'
 import { logger } from '@/utils/logger'
+import { notifyToast } from '@/utils/toast'
 
 import type { BossZpBossData, BossZpDetailData } from './types'
 
 // const { userInfo } = useStore()
-const toast = useToast()
 export const sameCompanyKey = 'local:sameCompany'
 export const sameHrKey = 'local:sameHr'
 
@@ -24,7 +24,7 @@ export async function getJobDetail(params: { securityId: string; lid: string }):
 }> {
   const token = window?.Cookie.get('bst')
   if (!token) {
-    toast.add({
+    notifyToast({
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
@@ -59,7 +59,7 @@ export async function sendPublishReq(
 
   const token = window?.Cookie.get('bst')
   if (!token) {
-    toast.add({
+    notifyToast({
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
@@ -126,7 +126,7 @@ export async function getBossData(
   // userInfo.value?.token 不相等！
   const token = window?.Cookie.get('bst')
   if (!token) {
-    toast.add({
+    notifyToast({
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })
@@ -165,10 +165,9 @@ export async function getBossData(
 }
 
 export async function uploadImage(securityId: string, file: File) {
-  const toast = useToast()
   const token = window?.Cookie.get('bst')
   if (!token) {
-    toast.add({
+    notifyToast({
       title: '没有获取到token,请刷新重试',
       color: 'error',
     })

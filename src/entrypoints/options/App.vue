@@ -10,8 +10,10 @@ import type { HelperContext } from '@/composables/useHelper'
 import { useModel, ChatModel } from '@/composables/useModel'
 import { counter } from '@/message'
 import { exportJson } from '@/utils/jsonImportExport'
+import { registerToastSink } from '@/utils/toast'
 
 import AIPage from './pages/AIPage.vue'
+import CareerWorkbench from './pages/CareerWorkbench.vue'
 import FeishuPage from './pages/FeishuPage.vue'
 import GeneralPage from './pages/GeneralPage.vue'
 import ManagementPage from './pages/ManagementPage.vue'
@@ -34,6 +36,7 @@ useResizeObserver(header, () => {
 })
 
 const toast = useToast()
+registerToastSink((options) => toast.add(options))
 const conf = useConf()
 const model = useModel()
 const schema = useConfigSections()
@@ -237,6 +240,14 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             />
           </div>
           <nav aria-label="设置目录" class="flex flex-col gap-1">
+            <UButton
+              label="求职工作台"
+              icon="i-lucide-briefcase-business"
+              :variant="page === 'career' ? 'soft' : 'outline'"
+              class="mb-2"
+              :disabled="!ready || busy"
+              @click="page = 'career'"
+            />
             <p class="px-2 py-1 text-xs text-muted">常规配置</p>
             <UButton
               label="基础设置"
@@ -299,6 +310,7 @@ onBeforeUnmount(() => window.removeEventListener('beforeunload', beforeUnload))
             {{ busy ? '正在加载配置…' : '配置未加载，请重试。' }}
           </p>
           <div v-if="ready" :key="revision" class="flex flex-col gap-5">
+            <CareerWorkbench v-show="page === 'career'" />
             <ManagementPage
               v-show="page === 'management'"
               :busy="busy"

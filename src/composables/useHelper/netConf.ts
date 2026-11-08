@@ -2,6 +2,7 @@ import type { AlertProps } from '@nuxt/ui'
 import type { Toast } from '@nuxt/ui/runtime/composables/useToast.js'
 
 import { counter } from '@/message'
+import { notifyToast } from '@/utils/toast'
 
 export interface NetConf {
   version: string
@@ -40,13 +41,12 @@ async function netNotification(
   if (now !== 0 && now < (await counter.storageGet(`local:netConf-${item.key}`, 0))) {
     return
   }
-  const toast = useToast()
   if (netNotificationMap.has(item.key)) {
     return
   }
   netNotificationMap.set(item.key, true)
   if (item.type === 'notification') {
-    void toast.add({
+    notifyToast({
       ...item.data,
       type: 'foreground',
       color: item.data.type as AlertProps['color'],

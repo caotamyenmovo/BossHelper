@@ -15,6 +15,7 @@ import { useAccounts } from '@/composables/useAccounts'
 import { useModel } from '@/composables/useModel'
 import { counter } from '@/message'
 import { logger } from '@/utils/logger'
+import { registerToastSink } from '@/utils/toast'
 
 import { useHelper, VITE_VERSION } from './composables/useHelper'
 import { get_system_version } from './utils'
@@ -27,6 +28,7 @@ const conf = useConf()
 const accounts = useAccounts()
 const switchingAccount = ref(false)
 const toast = useToast()
+registerToastSink((options) => toast.add(options))
 const protocolShow = ref(false)
 const protocol = 'boss-protocol'
 // 修改此日期后，用户需要重新阅读并同意协议。

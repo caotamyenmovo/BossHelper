@@ -2,12 +2,12 @@ import { ref, toRaw } from 'vue'
 
 import { counter } from '@/message'
 import { logger } from '@/utils/logger'
+import { notifyToast } from '@/utils/toast'
 
 import type { ModelConf, ModelConfData } from './type'
 
 export * from './chatModel'
 
-const toast = useToast()
 export const confModelKey = 'conf-model'
 
 /** Only migrate the retired protocol flag; advanced is deliberately left untouched. */
@@ -35,7 +35,7 @@ export const useModel = () => {
   async function save(options: { silent?: boolean } = {}) {
     await counter.storageSet(confModelKey, toRaw(modelData.value))
     if (!options.silent) {
-      toast.add({
+      notifyToast({
         title: '保存成功',
         color: 'success',
       })

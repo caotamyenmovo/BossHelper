@@ -1,19 +1,21 @@
-import { reactiveComputed, useSessionStorage, useStorageAsync, watchThrottled } from '@vueuse/core'
+import { reactiveComputed, watchThrottled } from '@vueuse/core'
 import { computed, reactive, ref, toRaw } from 'vue'
 
 import { counter } from '@/message'
-import { ExtStorage } from '@/message'
 import type { ConfigLevel, FormData } from '@/types/formData'
 import deepmerge, { jsonClone } from '@/utils/deepmerge'
 import { exportJson, importJson } from '@/utils/jsonImportExport'
 import { logger } from '@/utils/logger'
+import { notifyToast } from '@/utils/toast'
 
 import { useAccounts } from '../useAccounts'
+import { useExtensionStorage } from '../useExtensionStorage'
+import { sessionJsonStorage, useJsonStorage } from '../useJsonStorage'
 import { defaultFormData } from './info'
 
 export * from './info'
 
-export const appearanceConf = useStorageAsync(
+export const appearanceConf = useExtensionStorage(
   'appearance-conf',
   {
     jobView: 'cards' as 'cards' | 'table',
@@ -30,13 +32,16 @@ export const appearanceConf = useStorageAsync(
     chatBoxWidth: 600,
     defaultShowChatBox: false,
   },
-  ExtStorage,
   { mergeDefaults: true },
 )
 
 const isLoading = ref(true)
 const formData: FormData = reactive(jsonClone(defaultFormData))
-const selectedPresets = useSessionStorage<Record<string, string>>('HelperPresets', {})
+const selectedPresets = useJsonStorage<Record<string, string>>(
+  'HelperPresets',
+  {},
+  sessionJsonStorage,
+)
 const accountState = useAccounts()
 const formDataPreset = computed({
   get: () =>
@@ -139,8 +144,6 @@ const FROM_VERSION: [string, (from: Partial<FormData>) => Partial<FormData>][] =
 ]
 
 export const useConf = () => {
-  const toast = useToast()
-
   async function formDataHandler(from: Partial<FormData>) {
     try {
       for (let i = FROM_VERSION.length - 1; i >= 0; i--) {
@@ -153,7 +156,7 @@ export const useConf = () => {
       }
     } catch (err) {
       logger.error('用户配置初始化失败', err)
-      toast.add({
+      notifyToast({
         title: `用户配置初始化失败: ${String(err)}`,
         color: 'error',
       })
@@ -170,7 +173,7 @@ export const useConf = () => {
       const data = deepmerge<FormData>(defaultFormData, from)
       Object.assign(formData, data)
     } catch (e) {
-      toast.add({
+      notifyToast({
         title: `配置加载失败: ${String(e)}`,
         color: 'error',
       })
@@ -185,11 +188,11 @@ export const useConf = () => {
       await counter.storageSet(formDataKey(), jsonClone(formData))
 
       if (!options || !('silent' in options) || !options.silent) {
-        toast.add({ title: '保存成功', color: 'success' })
+        notifyToast({ title: '保存成功', color: 'success' })
       }
       logger.debug('formData保存')
     } catch (error: any) {
-      toast.add({
+      notifyToast({
         title: `保存失败: ${error.message}`,
         color: 'error',
       })
@@ -203,7 +206,7 @@ export const useConf = () => {
     const v = deepmerge<FormData>(defaultFormData, await counter.storageGet(formDataKey(), {}))
     deepmerge(formData, v, { clone: false })
     logger.debug('formData已重置')
-    toast.add({
+    notifyToast({
       title: '重置成功',
       color: 'success',
     })
@@ -218,7 +221,7 @@ export const useConf = () => {
     let jsonData = await importJson<Partial<FormData>>()
     jsonData = (await formDataHandler(jsonData)) ?? jsonData
     deepmerge(formData, jsonData, { clone: false })
-    toast.add({
+    notifyToast({
       title: '导入成功, 切记要手动保存哦',
       color: 'success',
     })
@@ -249,7 +252,7 @@ export const useConf = () => {
       { clone: false },
     )
     logger.debug('formData推荐配置已应用')
-    toast.add({
+    notifyToast({
       title: '推荐配置已应用, 不会自动保存, 请手动保存或重载恢复',
       color: 'success',
     })
@@ -258,7 +261,7 @@ export const useConf = () => {
   function confDelete() {
     deepmerge(formData, defaultFormData, { clone: false })
     logger.debug('formData已清空')
-    toast.add({
+    notifyToast({
       title: '配置清空成功, 不会自动保存, 请手动保存或重载恢复',
       color: 'success',
     })
@@ -286,7 +289,7 @@ export const useConf = () => {
       formDataPreset.value = value
       await init()
     } catch (e) {
-      toast.add({
+      notifyToast({
         title: `预设切换失败: ${String(e)}`,
         color: 'error',
       })

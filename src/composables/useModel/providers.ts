@@ -5,11 +5,11 @@ import { createAdvancedFetch } from '@/utils/modelRequest'
 
 import type { ModelConfData } from './type'
 
-export function createModel(conf: ModelConfData) {
+export function createModel(conf: ModelConfData, transport?: typeof fetch) {
   const settings = {
     baseURL: conf.base_url || undefined,
     apiKey: conf.api_key,
-    fetch: createAdvancedFetch(conf.advanced),
+    fetch: createAdvancedFetch(conf.advanced, transport),
   }
   if (conf.protocol === 'anthropic-messages') {
     return createAnthropic(settings)(conf.model)

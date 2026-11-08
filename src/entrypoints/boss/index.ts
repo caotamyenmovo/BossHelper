@@ -143,6 +143,7 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   _clickJobCardAction = (_: BossZpJobItemData) => {}
   _jobList: Ref<BossZpJobItemData[]>
   _jobDataMap: Map<string, BoosJobData>
+  private warnedMissingUserId = false
 
   rootVue: any = null
   jobMaps: Map<string, WorkflowData<BoosJobData, {}>>
@@ -163,12 +164,9 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
   }
 
   get uid() {
-    // return window?.Cookie.get('bst') // token ?
-    if (!window._PAGE.encryptUserId) {
-      useToast().add({
-        color: 'error',
-        title: '未获取到用户ID，可能会出现奇怪bug, 请尝试刷新页面或反馈',
-      })
+    if (!window._PAGE.encryptUserId && !this.warnedMissingUserId) {
+      this.warnedMissingUserId = true
+      logger.warn('未获取到用户ID，刷新页面或登录后重试')
     }
     return window._PAGE.encryptUserId
   }
@@ -506,6 +504,14 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
 
 export default defineUnlistedScript(async () => {
   // hookChatSocket()
+
+  const supportedPaths = ['/web/geek/job-recommend', '/web/geek/jobs']
+  if (!supportedPaths.includes(location.pathname)) {
+    logger.info('当前页面不是职位推荐或搜索页，跳过助手初始化', {
+      pathname: location.pathname,
+    })
+    return
+  }
 
   initCounter()
   const bossHelpCtx = await BossHelperCtx.new()

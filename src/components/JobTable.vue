@@ -1,15 +1,14 @@
 <script setup lang="ts">
 import type { TableColumn, TableRow } from '@nuxt/ui'
 import type { HeaderContext } from '@tanstack/vue-table'
-import { useStorageAsync } from '@vueuse/core'
 import { computed, nextTick, onActivated, onMounted, ref, watch } from 'vue'
 
 import { appearanceConf } from '@/composables/conf'
 import type { JobStatus } from '@/composables/useApplying/type'
+import { useExtensionStorage } from '@/composables/useExtensionStorage'
 import type { JobData } from '@/composables/useHelper'
 import { useHelper } from '@/composables/useHelper'
 import { useJobActions } from '@/composables/useJobActions'
-import { ExtStorage } from '@/message'
 
 const props = defineProps<{ jobs: JobData[]; following: boolean }>()
 const emit = defineEmits<{ 'update:following': [value: boolean] }>()
@@ -34,14 +33,13 @@ const tableJobs = computed(() => {
 
 const expanded = ref<Record<string, boolean>>({})
 const descriptions = ref<Record<string, { loading: boolean; error: string | null }>>({})
-const layout = useStorageAsync(
+const layout = useExtensionStorage(
   'job-table-layout-v1',
   {
     visibility: {} as Record<string, boolean>,
     sizing: {} as Record<string, number>,
     order: [] as string[],
   },
-  ExtStorage,
   { mergeDefaults: true },
 )
 const columnVisibility = computed({

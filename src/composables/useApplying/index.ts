@@ -1,6 +1,7 @@
 import { shallowRef, ref, reactive } from 'vue'
 
 import { createFeishuSync, feishuJobRow } from '@/utils/feishuSync'
+import { notifyToast } from '@/utils/toast'
 
 import type { HelperContext } from '../useHelper'
 import { DependencyMissingError } from './handles'
@@ -75,9 +76,8 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
   >([])
   const stateMaps = ref(new Map<string, any>())
   const resolvedHandlers = new Map<string, Handler<C, T, S>>()
-  const toast = useToast()
   const reportFeishuError = (error: unknown) => {
-    toast.add({
+    notifyToast({
       id: 'feishu-sync-error',
       title: '飞书同步失败，待同步记录已保留',
       description: error instanceof Error ? error.message : String(error),

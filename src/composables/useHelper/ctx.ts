@@ -18,6 +18,7 @@ import { JobResultCache } from './jobCache'
 import type { NetConf } from './netConf'
 import { initNetConf } from './netConf'
 import type { Log, JobData, LogData, ConfigAccordionItem, AlertItem } from './type'
+import { notifyToast } from '@/utils/toast'
 
 export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
   shadowRoot: ShadowRoot | null = null
@@ -211,11 +212,10 @@ export abstract class HelperContext<C extends HelperContext<C, T, S>, T, S> {
       toast: Partial<Toast>
     },
   ) {
-    const toast = useToast()
     if (this.conf.formData.notification.value && document.visibilityState !== 'visible') {
       await notification(msg, opt?.notification)
     }
-    toast.add({
+    notifyToast({
       ...opt?.toast,
       title: msg,
     })
