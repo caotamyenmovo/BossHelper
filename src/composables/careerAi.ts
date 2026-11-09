@@ -33,8 +33,9 @@ export interface CareerAssistant {
     company: string,
     jobDescription: string,
     previousAnswers: CareerAnswer[],
+    options?: CareerCompletionOptions,
   ): Promise<string>
-  reviewInterview(role: string, answers: CareerAnswer[]): Promise<string>
+  reviewInterview(role: string, answers: CareerAnswer[], options?: CareerCompletionOptions, context?: { profile?: ResumeProfile; company: string; jobDescription: string }): Promise<string>
   summarizeResearch(
     role: string,
     sources: Array<
@@ -69,7 +70,7 @@ ${JSON.stringify(profile)}`,
         options,
       )
     },
-    nextInterviewQuestion(profile, role, company, jobDescription, previousAnswers) {
+    nextInterviewQuestion(profile, role, company, jobDescription, previousAnswers, options) {
       return complete(`你是专业面试官。针对岗位“${role}”${company ? `，公司“${company}”` : ''}进行文字模拟面试。结合职位描述和简历，每轮只提出一个简洁、具体的问题，不要提供答案或评价。
 
 职位描述：
@@ -79,13 +80,16 @@ ${jobDescription || '未提供'}
 ${JSON.stringify(profile)}
 
 此前问答：
-${JSON.stringify(previousAnswers)}`)
+${JSON.stringify(previousAnswers)}`, options)
     },
-    reviewInterview(role, answers) {
+    reviewInterview(role, answers, options, context) {
       return complete(`请复盘以下针对“${role}”岗位的模拟面试。先逐题反馈回答的优点、遗漏和改进方向，再总结整体亮点、待改进点、示范回答和可执行练习清单。不得补造求职者经历。
 
 问答记录：
-${JSON.stringify(answers)}`)
+${JSON.stringify(answers)}
+
+本次面试的简历与岗位快照：
+${JSON.stringify(context ?? {})}`, options)
     },
     async summarizeResearch(role, sources, profile, options) {
       if (!profile) throw new Error('请先选择简历档案，再结合检索内容生成修改意见。')

@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
 
+import { createCareerInterview } from '@/composables/careerInterview'
 import { createCareerAssistant, hasResearchContent } from '@/composables/careerAi'
 import type { ParsedResume } from '@/composables/careerAi'
 import { runCareerCompletion } from '@/composables/careerCompletion'
@@ -10,7 +11,7 @@ import { searchPublicXiaohongshu } from '@/composables/publicResearch'
 import type { PublicCareerSource } from '@/composables/publicResearch'
 import { extractResumeText } from '@/composables/resumeImport'
 import { createCareerWorkbench, createEmptyResumeProfile } from '@/composables/useCareerWorkbench'
-import type { ResumeProfile } from '@/composables/useCareerWorkbench'
+import type { ResumeProfile, CareerAdviceRecord } from '@/composables/useCareerWorkbench'
 import type { CareerExperience } from '@/composables/useCareerWorkbench'
 import type { CareerInterviewSession } from '@/composables/useCareerWorkbench'
 import { useModel } from '@/composables/useModel'
@@ -22,7 +23,15 @@ import { jsonClone } from '@/utils/deepmerge'
 import { extractResumeFields, hasResumeFields } from '@/utils/resumeFields'
 import { createXiaohongshuResearch } from '@/utils/xiaohongshuResearch'
 
-const workbench = createCareerWorkbench(counter)
+const workbench = createCareerWorkbench({
+  storageGet: (key, fallback) => counter.storageGet(key, fallback),
+  storageSet: (key, value) => counter.storageSet(key, value),
+  async careerWrite(command) {
+    const result = await browser.runtime.sendMessage({ type: 'career-repository-write', command }) as { records?: unknown; error?: string } | undefined
+    if (!result || result.error) throw new Error(result?.error || '扩展后台未响应，请保留输入并重新加载扩展后重试。')
+    return result.records
+  },
+})
 const profiles = ref<ResumeProfile[]>([])
 const selectedId = ref('')
 const draft = ref<ResumeProfile | null>(null)
@@ -58,7 +67,10 @@ const configuredModelName = computed(() => {
   const provider = models.modelData.value.find((item) => item.key === configuredModelKey.value)
   return provider ? `${provider.name} · ${provider.data?.model ?? ''}` : '尚未配置'
 })
-const view = ref<'resume' | 'research' | 'interview' | 'history'>('resume')
+const view = ref<'resume' | 'research' | 'interview' | 'history' | 'advice-history'>('resume')
+const adviceRecords = ref<CareerAdviceRecord[]>([])
+const pendingAdvice = ref<CareerAdviceRecord[]>([])
+let profileContextEpoch = 0
 const analysis = ref('')
 const analysisBusy = ref(false)
 const analysisStatus = ref('')
@@ -92,14 +104,56 @@ const pastedSourceText = ref('')
 const interviewRole = ref('')
 const interviewCompany = ref('')
 const interviewDescription = ref('')
-const currentSession = ref<CareerInterviewSession | null>(null)
-const currentQuestion = ref('')
-const interviewAnswer = ref('')
-const interviewBusy = ref(false)
+const interviewFlow = createCareerInterview(workbench, createCareerAssistant(completeWithConfiguredAi))
+const currentSession = computed(() => interviewFlow.state.session)
+const currentQuestion = computed(() => currentSession.value?.currentQuestion ?? '')
+const interviewAnswer = computed({ get: () => currentSession.value?.draftAnswer ?? '', set: (text: string) => interviewFlow.setAnswer(text) })
+const interviewBusy = computed(() => interviewFlow.state.busy)
 const interviews = ref<CareerInterviewSession[]>([])
 const selectedProfile = computed(
-  () => profiles.value.find((profile) => profile.id === selectedId.value) ?? draft.value,
+  () => draft.value ?? profiles.value.find((profile) => profile.id === selectedId.value),
 )
+const draftDirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== JSON.stringify(profiles.value.find((item) => item.id === draft.value?.id)))
+function allowDiscardDraft() {
+  return !draftDirty.value || window.confirm('当前简历有未保存的修改，放弃这些修改并切换？')
+}
+function clearProfileContext(keepSources = false) {
+  profileContextEpoch++
+  analysisController?.abort()
+  researchAdviceController?.abort()
+  analysis.value = ''
+  analysisStatus.value = ''
+  researchSummary.value = ''
+  researchAdviceStatus.value = ''
+  if (!keepSources) {
+    researchRole.value = ''
+    researchSources.value = []
+    researchSourceRole.value = ''
+    researchNotice.value = ''
+  }
+  pastedSourceTitle.value = ''
+  pastedSourceUrl.value = ''
+  pastedSourceText.value = ''
+  interviewRole.value = ''
+  if (!keepSources) {
+    researchEpoch++
+    researchBusy.value = false
+    researchWebBusy.value = false
+    void xhsResearch.cancel().catch(() => undefined)
+  }
+}
+watch(draft, () => {
+  if (draftDirty.value) {
+    profileContextEpoch++
+    saved.value = false
+    analysisController?.abort()
+    researchAdviceController?.abort()
+    analysis.value = ''
+    researchSummary.value = ''
+    analysisStatus.value = ''
+    researchAdviceStatus.value = ''
+  }
+}, { deep: true, flush: 'sync' })
 
 // Keep references to both stored lists so existing internship records remain editable.
 const experienceSections = computed(() => {
@@ -148,32 +202,64 @@ async function completeWithConfiguredAi(
 
 const assistant = createCareerAssistant(completeWithConfiguredAi)
 
+function newAdviceRecord(kind: CareerAdviceRecord['kind']): CareerAdviceRecord {
+  return { id: crypto.randomUUID(), kind, profileSnapshot: jsonClone(selectedProfile.value!), role: kind === 'research' ? researchRole.value.trim() : selectedProfile.value?.targetRoles.join('、') ?? '', model: configuredModelName.value, sources: kind === 'research' ? jsonClone(researchSources.value.filter(hasResearchContent)) : [], text: '', status: 'partial', done: false, createdAt: Date.now(), updatedAt: Date.now() }
+}
+async function saveAdviceRecord(record: CareerAdviceRecord) {
+  try {
+    adviceRecords.value = await workbench.saveAdvice(record)
+    pendingAdvice.value = pendingAdvice.value.filter((item) => item.id !== record.id)
+  } catch (cause) {
+    if (!pendingAdvice.value.some((item) => item.id === record.id)) pendingAdvice.value.push(jsonClone(record))
+    error.value = `建议尚未保存，内容已保留，可重试保存：${cause instanceof Error ? cause.message : String(cause)}`
+  }
+}
+async function retryAdviceSave() {
+  for (const record of [...pendingAdvice.value]) await saveAdviceRecord(record)
+}
+async function removeAdvice(record: CareerAdviceRecord) {
+  if (!window.confirm('删除这条建议及其来源记录？')) return
+  try { adviceRecords.value = await workbench.deleteAdvice(record.id, record.revision) }
+  catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+}
+async function toggleAdvice(record: CareerAdviceRecord) {
+  await saveAdviceRecord({ ...jsonClone(record), done: !record.done })
+}
+
 async function analyzeResume() {
   if (!selectedProfile.value || analysisBusy.value || researchAdviceBusy.value) return
   const controller = new AbortController()
+  const owner = profileContextEpoch
+  const record = newAdviceRecord('analysis')
+  let received = ''
   analysisController = controller
   analysisBusy.value = true
   analysis.value = ''
   analysisStatus.value = '正在连接模型…'
   error.value = ''
   try {
-    analysis.value = await assistant.analyzeResume(selectedProfile.value, {
+    const result = await assistant.analyzeResume(record.profileSnapshot, {
       signal: controller.signal,
       onText: (text) => {
-        analysis.value = text
+        received = text
+        if (owner === profileContextEpoch) analysis.value = text
       },
       onStatus: (status) => {
-        analysisStatus.value = status
+        if (owner === profileContextEpoch) analysisStatus.value = status
       },
     })
-    analysisStatus.value = '已完成'
+    received = result
+    record.status = 'complete'
+    if (owner === profileContextEpoch) { analysis.value = result; analysisStatus.value = '已完成' }
   } catch (cause) {
+    if (owner !== profileContextEpoch) return
     if (controller.signal.aborted) analysisStatus.value = '已停止生成，已保留收到的内容。'
     else {
       analysisStatus.value = '生成未完成，已保留收到的内容。'
       error.value = cause instanceof Error ? cause.message : String(cause)
     }
   } finally {
+    if (received.trim()) { record.text = received; await saveAdviceRecord(record) }
     analysisController = undefined
     analysisBusy.value = false
   }
@@ -318,34 +404,42 @@ async function createResearchAdvice() {
     return
   }
   const controller = new AbortController()
+  const owner = profileContextEpoch
+  const record = newAdviceRecord('research')
+  let received = ''
   researchAdviceController = controller
   researchAdviceBusy.value = true
   researchSummary.value = ''
   researchAdviceStatus.value = '正在连接模型…'
   error.value = ''
   try {
-    researchSummary.value = await assistant.summarizeResearch(
+    const result = await assistant.summarizeResearch(
       role,
-      researchSources.value,
-      selectedProfile.value ?? undefined,
+      record.sources,
+      record.profileSnapshot,
       {
         signal: controller.signal,
         onText: (text) => {
-          researchSummary.value = text
+          received = text
+          if (owner === profileContextEpoch) researchSummary.value = text
         },
         onStatus: (status) => {
-          researchAdviceStatus.value = status
+          if (owner === profileContextEpoch) researchAdviceStatus.value = status
         },
       },
     )
-    researchAdviceStatus.value = '已完成'
+    received = result
+    record.status = 'complete'
+    if (owner === profileContextEpoch) { researchSummary.value = result; researchAdviceStatus.value = '已完成' }
   } catch (cause) {
+    if (owner !== profileContextEpoch) return
     if (controller.signal.aborted) researchAdviceStatus.value = '已停止生成，已保留收到的内容。'
     else {
       researchAdviceStatus.value = '生成未完成，已保留收到的内容。'
       error.value = cause instanceof Error ? cause.message : String(cause)
     }
   } finally {
+    if (received.trim()) { record.text = received; await saveAdviceRecord(record) }
     researchAdviceController = undefined
     researchAdviceBusy.value = false
   }
@@ -389,118 +483,46 @@ async function summarizePastedSource() {
 async function startInterview() {
   const profile = selectedProfile.value
   const role = interviewRole.value.trim()
-  if (!profile || !role) {
-    error.value = '请先选择或填写一份简历档案和目标岗位。'
-    return
-  }
-  interviewBusy.value = true
-  error.value = ''
-  try {
-    const savedProfiles = await workbench.saveProfile(profile)
-    profiles.value = savedProfiles
-    const savedProfile = savedProfiles.find((item) => item.id === profile.id)!
-    currentSession.value = {
-      id: crypto.randomUUID(),
-      profileId: savedProfile.id,
-      role,
-      company: interviewCompany.value.trim(),
-      jobDescription: interviewDescription.value.trim(),
-      answers: [],
-      review: '',
-      createdAt: Date.now(),
-      updatedAt: Date.now(),
-    }
-    await workbench.saveInterview(currentSession.value)
-    interviews.value = await workbench.listInterviews()
-    currentQuestion.value = await assistant.nextInterviewQuestion(
-      savedProfile,
-      role,
-      interviewCompany.value.trim(),
-      interviewDescription.value.trim(),
-      [],
-    )
-    await workbench.saveInterview(currentSession.value)
-    interviews.value = await workbench.listInterviews()
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
-  } finally {
-    interviewBusy.value = false
-  }
-}
-
-async function submitInterviewAnswer() {
-  if (!currentSession.value || !currentQuestion.value || !interviewAnswer.value.trim()) return
-  currentSession.value.answers.push({
-    question: currentQuestion.value,
-    answer: interviewAnswer.value.trim(),
-  })
-  interviewAnswer.value = ''
-  currentQuestion.value = ''
-  await workbench.saveInterview(currentSession.value)
+  if (!profile || !role) { error.value = '请先选择简历档案和目标岗位。'; return }
+  await interviewFlow.start({ profile: jsonClone(profile), role, company: interviewCompany.value.trim(), jobDescription: interviewDescription.value.trim() })
   interviews.value = await workbench.listInterviews()
 }
-
-async function askNextQuestion() {
-  if (!currentSession.value) return
-  const profile = profiles.value.find((item) => item.id === currentSession.value?.profileId)
-  if (!profile) return
-  interviewBusy.value = true
-  error.value = ''
-  try {
-    currentQuestion.value = await assistant.nextInterviewQuestion(
-      profile,
-      currentSession.value.role,
-      currentSession.value.company,
-      currentSession.value.jobDescription,
-      currentSession.value.answers,
-    )
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
-  } finally {
-    interviewBusy.value = false
-  }
-}
-
-async function finishInterview() {
-  if (!currentSession.value || !currentSession.value.answers.length) return
-  interviewBusy.value = true
-  error.value = ''
-  try {
-    currentSession.value.review = await assistant.reviewInterview(
-      currentSession.value.role,
-      currentSession.value.answers,
-    )
-    await workbench.saveInterview(currentSession.value)
-    interviews.value = await workbench.listInterviews()
-    currentQuestion.value = ''
-  } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : String(cause)
-  } finally {
-    interviewBusy.value = false
-  }
-}
-
+async function submitInterviewAnswer() { await interviewFlow.submit(); interviews.value = await workbench.listInterviews() }
+async function askNextQuestion() { await interviewFlow.next(); interviews.value = await workbench.listInterviews() }
+async function finishInterview() { await interviewFlow.finish(); interviews.value = await workbench.listInterviews() }
 async function removeInterview(session: CareerInterviewSession) {
   if (!window.confirm('删除这次模拟面试和复盘？此操作不可撤销。')) return
-  interviews.value = await workbench.deleteInterview(session.id)
-  if (currentSession.value?.id === session.id) currentSession.value = null
+  try {
+    if (currentSession.value?.id === session.id && !(await interviewFlow.close())) return
+    interviews.value = await workbench.deleteInterview(session.id, session.revision)
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
 }
-
-function openInterview(session: CareerInterviewSession) {
-  currentSession.value = jsonClone(session)
-  currentQuestion.value = ''
+async function openInterview(session: CareerInterviewSession) {
+  if (!(await interviewFlow.close())) return
+  const latest = (await workbench.listInterviews()).find((item) => item.id === session.id)
+  if (!latest) { error.value = '这次面试已被删除，请刷新记录。'; return }
+  await interviewFlow.open(latest, profiles.value.find((item) => item.id === session.profileId))
   view.value = 'interview'
 }
-
-function closeInterview() {
-  currentSession.value = null
-  currentQuestion.value = ''
+async function closeInterview() {
+  await interviewFlow.close()
+  interviews.value = await workbench.listInterviews()
+}
+async function openHistory(kind: 'history' | 'advice-history') {
+  view.value = kind
+  try {
+    if (kind === 'history') interviews.value = await workbench.listInterviews()
+    else adviceRecords.value = await workbench.listAdvice()
+  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+}
+function beforeLeave(event: BeforeUnloadEvent) {
+  if (draftDirty.value || pendingAdvice.value.length || interviewFlow.state.dirty) { event.preventDefault(); event.returnValue = '' }
 }
 
 function openResearch() {
   view.value = 'research'
   if (!researchRole.value && selectedProfile.value?.targetRoles.length) {
-    researchRole.value = selectedProfile.value.targetRoles[0]
+    researchRole.value = selectedProfile.value.targetRoles[0] ?? ''
   }
 }
 
@@ -510,6 +532,7 @@ async function refresh() {
   try {
     profiles.value = await workbench.listProfiles()
     interviews.value = await workbench.listInterviews()
+    adviceRecords.value = await workbench.listAdvice()
     if (selectedId.value) {
       const current = profiles.value.find((profile) => profile.id === selectedId.value)
       if (current) draft.value = jsonClone(current)
@@ -525,19 +548,29 @@ async function refresh() {
   }
 }
 
-function newProfile() {
+function newProfile(preserveImport = false) {
+  if (!preserveImport && !allowDiscardDraft()) return
+  if (!preserveImport) resetImportSource()
+  clearProfileContext()
   selectedId.value = ''
   draft.value = createEmptyResumeProfile()
   saved.value = false
 }
 
 function editProfile(profile: ResumeProfile) {
+  if (draft.value?.id !== profile.id && !allowDiscardDraft()) return
+  if (draft.value?.id === profile.id && draftDirty.value) return
+  resetImportSource()
+  clearProfileContext(!draft.value)
   selectedId.value = profile.id
   draft.value = jsonClone(profile)
   saved.value = false
 }
 
 function cancelEdit() {
+  if (!allowDiscardDraft()) return
+  resetImportSource()
+  clearProfileContext()
   if (!selectedId.value) {
     draft.value = null
     return
@@ -566,6 +599,7 @@ function resetImportSource() {
   pendingBossImportToken.value = ''
   lastBossToken = ''
   bossImportBusy.value = false
+  fileBusy.value = false
   bossImportedProfile.value = null
   bossImportMessage.value = ''
   resumeText.value = ''
@@ -592,7 +626,7 @@ async function readResumeFile(event: Event) {
     if (epoch !== importEpoch) return
     resumeText.value = text
     resumeFileName.value = file.name
-    if (!draft.value) newProfile()
+    if (!draft.value) newProfile(true)
   } catch (cause) {
     if (epoch === importEpoch) error.value = cause instanceof Error ? cause.message : String(cause)
   } finally {
@@ -626,7 +660,7 @@ function receiveBossImport(state: BossImportState) {
   resumeText.value = state.content
   resumeFileName.value = 'Boss 个人简历页'
   importReviewed.value = false
-  if (!draft.value) newProfile()
+  if (!draft.value) newProfile(true)
   bossImportMessage.value = '已读取 Boss 在线简历。请点击“本地识别字段”，检查后保存。'
 }
 
@@ -735,18 +769,23 @@ function recognizeResume() {
 }
 
 async function saveProfile() {
-  if (!draft.value) return
+  if (!draft.value || saving.value) return
+  const submitted = jsonClone(draft.value)
+  const submittedBossToken = lastBossToken
   saving.value = true
   error.value = ''
   try {
-    profiles.value = await workbench.saveProfile(draft.value)
-    selectedId.value = draft.value.id
-    draft.value = jsonClone(profiles.value.find((item) => item.id === draft.value?.id)!)
-    saved.value = true
-    importReviewed.value = false
-    if (lastBossToken) {
+    profiles.value = await workbench.saveProfile(submitted)
+    const stored = profiles.value.find((item) => item.id === submitted.id)!
+    if (draft.value?.id === submitted.id) {
+      selectedId.value = submitted.id
+      draft.value = { ...jsonClone(draft.value), revision: stored.revision, updatedAt: stored.updatedAt }
+      saved.value = !draftDirty.value
+      if (saved.value) importReviewed.value = false
+    }
+    if (submittedBossToken && lastBossToken === submittedBossToken) {
       void browser.runtime
-        .sendMessage({ type: 'career-import-clear', token: lastBossToken })
+        .sendMessage({ type: 'career-import-clear', token: submittedBossToken })
         .catch(() => undefined)
       lastBossToken = ''
     }
@@ -760,8 +799,10 @@ async function saveProfile() {
 async function removeProfile(profile: ResumeProfile) {
   if (!window.confirm(`删除“${profile.name || '未命名简历'}”？此操作不可撤销。`)) return
   try {
-    profiles.value = await workbench.deleteProfile(profile.id)
+    profiles.value = await workbench.deleteProfile(profile.id, profile.revision)
     if (selectedId.value === profile.id) {
+      resetImportSource()
+      clearProfileContext()
       selectedId.value = ''
       draft.value = null
     }
@@ -771,6 +812,7 @@ async function removeProfile(profile: ResumeProfile) {
 }
 
 onMounted(() => {
+  window.addEventListener('beforeunload', beforeLeave)
   browser.storage.onChanged.addListener(onBossStorageChanged)
   void refresh()
   void syncBossImport(true)
@@ -779,7 +821,9 @@ onMounted(() => {
   bossImportPoll = window.setInterval(() => void syncBossImport(), 1000)
 })
 onBeforeUnmount(() => {
+  window.removeEventListener('beforeunload', beforeLeave)
   browser.storage.onChanged.removeListener(onBossStorageChanged)
+  void interviewFlow.close()
   importEpoch++
   window.clearInterval(bossImportPoll)
   researchEpoch++
@@ -823,9 +867,13 @@ onBeforeUnmount(() => {
           :disabled="bossImportBusy"
           @click="fileInput?.click()"
         />
-        <UButton label="新建简历" icon="i-lucide-plus" @click="newProfile" />
+        <UButton label="新建简历" icon="i-lucide-plus" @click="newProfile()" />
       </div>
     </header>
+    <div class="rounded border border-default bg-elevated/40 p-3 text-sm" aria-label="当前求职上下文">
+      <p>当前简历：{{ selectedProfile?.name || (selectedProfile ? '未命名简历' : '尚未选择') }} · {{ draftDirty ? '有未保存修改' : '已保存版本' }}</p>
+      <p class="mt-1 text-xs text-muted">选择简历 → 确认目标岗位 → 查阅经验并生成建议 → 面试练习与复盘。AI 分析使用当前可见简历快照，编辑内容不会自动发送。</p>
+    </div>
 
     <nav aria-label="求职工作台功能" class="flex flex-wrap gap-1 border-b border-default pb-3">
       <UButton
@@ -846,11 +894,16 @@ onBeforeUnmount(() => {
       <UButton
         label="面试复盘"
         :variant="view === 'history' ? 'soft' : 'ghost'"
-        @click="view = 'history'"
+        @click="openHistory('history')"
       />
+      <UButton label="建议记录" :variant="view === 'advice-history' ? 'soft' : 'ghost'" @click="openHistory('advice-history')" />
     </nav>
 
     <UAlert v-if="error" color="error" title="操作失败" :description="error" />
+    <div v-if="pendingAdvice.length" class="rounded border border-warning p-3">
+      <p class="text-sm">{{ pendingAdvice.length }} 条建议尚未保存，请保留页面并重试。</p>
+      <UButton label="重试保存建议" size="sm" @click="retryAdviceSave" />
+    </div>
     <section v-if="view === 'resume'" class="space-y-5">
       <p v-if="bossImportMessage" role="status" class="text-sm text-muted">
         {{ bossImportMessage }}
@@ -1280,6 +1333,9 @@ onBeforeUnmount(() => {
     </section>
 
     <section v-else-if="view === 'interview'" class="max-w-3xl space-y-5">
+      <p v-if="interviewFlow.state.error" role="alert" class="rounded border border-error p-3 text-sm text-error">{{ interviewFlow.state.error }}</p>
+      <p v-if="interviewFlow.state.status" role="status" class="text-sm text-muted">{{ interviewFlow.state.status }}</p>
+      <UButton v-if="interviewFlow.state.generating" label="停止生成" color="neutral" variant="outline" @click="interviewFlow.stop()" />
       <div v-if="!currentSession" class="space-y-4">
         <div>
           <h3 class="text-base font-semibold">文字模拟面试</h3>
@@ -1298,7 +1354,7 @@ onBeforeUnmount(() => {
             "
             class="w-full"
             @update:model-value="
-              (value) => {
+              (value: string | undefined) => {
                 const profile = profiles.find((item) => item.id === value)
                 if (profile) editProfile(profile)
               }
@@ -1336,7 +1392,7 @@ onBeforeUnmount(() => {
               {{ currentSession.company }}
             </p>
           </div>
-          <UButton label="结束本次练习" color="neutral" variant="outline" @click="closeInterview" />
+          <UButton label="保存并退出练习" color="neutral" variant="outline" @click="closeInterview" />
         </div>
         <div
           v-for="(entry, index) in currentSession.answers"
@@ -1354,12 +1410,14 @@ onBeforeUnmount(() => {
             v-model="interviewAnswer"
             class="w-full"
             :rows="5"
-            placeholder="输入你的回答"
+            placeholder="输入你的回答，草稿自动保存在本地"
+            :disabled="interviewBusy"
           />
           <UButton
             label="提交回答"
             icon="i-lucide-send"
-            :disabled="!interviewAnswer.trim()"
+            :disabled="!interviewAnswer.trim() || interviewBusy"
+            :loading="interviewBusy"
             @click="submitInterviewAnswer"
           />
         </div>
@@ -1395,10 +1453,10 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-else class="space-y-4">
+    <section v-else-if="view === 'history'" class="space-y-4">
       <h3 class="text-base font-semibold">面试复盘记录</h3>
       <p v-if="!interviews.length" class="text-sm text-muted">
-        完成一次模拟面试后，复盘会保存在此处。
+        练习会自动保存，未完成的面试也可以在此继续。
       </p>
       <article
         v-for="session in interviews"
@@ -1411,7 +1469,7 @@ onBeforeUnmount(() => {
           >
           <span class="block text-xs text-muted"
             >{{ new Date(session.updatedAt).toLocaleString() }} ·
-            {{ session.answers.length }} 道问答</span
+            {{ session.answers.length }} 道问答 · {{ session.review ? '已完成' : '进行中，可继续' }}</span
           >
           <span class="mt-1 block whitespace-pre-wrap text-sm text-muted">{{
             session.review || '尚未生成复盘'
@@ -1424,6 +1482,38 @@ onBeforeUnmount(() => {
           :aria-label="`删除${session.role}面试记录`"
           @click="removeInterview(session)"
         />
+      </article>
+    </section>
+    <section v-else class="space-y-4" aria-label="本地建议记录">
+      <h3 class="text-base font-semibold">建议记录</h3>
+      <p class="text-sm text-muted">保存生成时的简历、目标岗位和来源。旧建议仅对应当时的简历版本，不会自动覆盖当前简历。</p>
+      <p v-if="!adviceRecords.length" class="text-sm text-muted">还没有建议记录。生成分析或修改意见后会保存在这里。</p>
+      <article v-for="record in adviceRecords" :key="record.id" class="space-y-3 rounded border border-default p-4" data-testid="advice-record">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <div>
+            <h4 class="font-medium">{{ record.profileSnapshot.name || '未命名简历' }} · {{ record.role || '求职方向分析' }}</h4>
+            <p class="text-xs text-muted">{{ new Date(record.createdAt).toLocaleString() }} · {{ record.kind === 'research' ? '来源修改建议' : '简历分析' }} · {{ record.status === 'partial' ? '部分生成内容' : '生成完成' }} · {{ record.model }}</p>
+          </div>
+          <div class="flex gap-2">
+            <UButton :label="record.done ? '已处理，标回待处理' : '标记已处理'" size="sm" color="neutral" variant="outline" @click="toggleAdvice(record)" />
+            <UButton label="删除记录" size="sm" color="error" variant="ghost" @click="removeAdvice(record)" />
+          </div>
+        </div>
+        <pre class="whitespace-pre-wrap text-sm">{{ record.text }}</pre>
+        <details>
+          <summary class="cursor-pointer text-sm">查看分析时的简历快照</summary>
+          <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">{{ JSON.stringify(record.profileSnapshot, null, 2) }}</pre>
+        </details>
+        <details v-if="record.sources.length">
+          <summary class="cursor-pointer text-sm">核对 {{ record.sources.length }} 条来源和读取范围</summary>
+          <div v-for="source in record.sources" :key="source.url" class="mt-3 space-y-1 border-t border-default pt-2 text-sm">
+            <a :href="source.url" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ source.title }}</a>
+            <p class="text-xs text-muted">{{ source.author || '作者未识别' }} · {{ sourceKindLabels[source.contentKind || ''] || '导入内容' }}</p>
+            <p class="whitespace-pre-wrap">{{ source.excerpt }}</p>
+            <p v-if="source.commentCoverage" class="text-xs text-muted">{{ source.commentCoverage.message }}</p>
+            <p v-for="comment in source.comments || []" :key="comment.id" class="text-xs">{{ comment.author }} · {{ comment.likesText }} 赞：{{ comment.text }}</p>
+          </div>
+        </details>
       </article>
     </section>
   </section>

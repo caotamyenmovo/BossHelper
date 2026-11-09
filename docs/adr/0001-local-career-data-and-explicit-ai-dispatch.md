@@ -16,3 +16,9 @@ The extension's local storage is the source of truth for resume profiles and int
 - AI features require a configured provider and must explain that the selected provider receives the submitted content.
 - Importing a file or reading a Boss profile must not by itself trigger an AI request.
 - Cross-device synchronization is out of scope unless separately designed and approved.
+
+## Workbench recovery (2026-11-09)
+
+An interview retains its starting resume snapshot, current question and answer draft locally. Advice records retain their input snapshot, role, model label, source evidence, output and completion status. Editing or deleting the original profile does not rewrite these historical inputs. Users delete these records separately. Existing records without snapshots can use an available original profile when reopened; if it is missing, explain the limitation rather than inventing a resume.
+
+Career writes are coordinated by the extension background with revision checks. A stale page must report a conflict and preserve its input rather than overwrite newer records. AI still uses the existing configured model and only runs after an explicit user action.

@@ -518,7 +518,7 @@ export async function useDeliveryWorkflow<C extends HelperContext<C, T, S>, T, S
         repeatedJobs = hasNewJobs ? 0 : repeatedJobs + jobs.length
         for (const job of jobs) seenJobs.add(job.key)
         if (repeatedJobs >= 50) {
-          log.warn('连续遇到至少 50 个重复岗位且没有新岗位，停止翻页')
+          logger.warn('连续遇到至少 50 个重复岗位且没有新岗位，停止翻页')
           break
         }
         for (const [index, jobData] of jobs.entries()) {

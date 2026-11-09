@@ -30,7 +30,14 @@
     "test:research": "bun test scripts/public-research.test.ts scripts/xiaohongshu-comments.test.ts scripts/career-ai.test.ts",
     "test:research:browser": "node scripts/public-research-browser.mjs",
     "test:career-ai": "bun test scripts/career-ai.test.ts scripts/career-completion.test.ts",
-    "test:career-ai:browser": "node scripts/career-completion-browser.mjs"
+    "test:career-ai:browser": "node scripts/career-completion-browser.mjs",
+    "test:workbench": "bun test scripts/career-workbench.test.ts scripts/career-interview.test.ts",
+    "test:workbench:browser": "node scripts/career-workbench-browser.mjs",
+    "postinstall": "node scripts/apply-local-patches.mjs",
+    "precheck": "node scripts/apply-local-patches.mjs",
+    "prebuild:chrome": "node scripts/apply-local-patches.mjs",
+    "prebuild:firefox": "node scripts/apply-local-patches.mjs",
+    "prebuild:edge": "node scripts/apply-local-patches.mjs"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.85",
@@ -75,7 +82,7 @@
     "puppeteer": "^25.16.0",
     "sass": "^1.106.0",
     "ts-proto": "^2.18.0",
-    "typescript": "^7.0.2",
+    "typescript": "5.9.3",
     "uid": "^2.0.2",
     "vite-plugin-tailwind-shadowdom": "^1.1.1",
     "vue-tsc": "^3.3.13",

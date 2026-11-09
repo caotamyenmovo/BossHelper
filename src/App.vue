@@ -254,7 +254,7 @@ function openStore() {
                     onSelect: () => switchPreset(preset.value),
                   }))
                 "
-                @update:open="(open) => open && loadPresetOptions()"
+                @update:open="(open: boolean) => open && loadPresetOptions()"
               >
                 <UButton
                   class="ml-2"

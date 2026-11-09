@@ -2,7 +2,7 @@
 import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
 import { counter } from '@/message'
-import { CustomGreetingItem } from '@/types/formData'
+import type { CustomGreetingItem } from '@/types/formData'
 
 const conf = useConf()
 const helper = useHelper()
@@ -79,8 +79,7 @@ const advancedGreetinSaveLoading = ref(false)
 async function advancedGreetinSave(close: () => void) {
   advancedGreetinSaveLoading.value = true
   try {
-    for (const index in advancedGreetingValue.value) {
-      const item = advancedGreetingValue.value[index]
+    for (const [index, item] of advancedGreetingValue.value.entries()) {
       if (item.type === 'image') {
         if (item.model instanceof File) {
           const file = item.model as File

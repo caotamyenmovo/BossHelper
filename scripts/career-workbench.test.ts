@@ -21,6 +21,27 @@ function memoryStorage() {
   }
 }
 
+test('two workbench pages can save different profiles concurrently without losing records', async () => {
+  const storage = memoryStorage()
+  const first = createCareerWorkbench(storage)
+  const second = createCareerWorkbench(storage)
+  const a = { ...createEmptyResumeProfile(), name: 'Alice' }
+  const b = { ...createEmptyResumeProfile(), name: 'Bob' }
+  await Promise.all([first.saveProfile(a), second.saveProfile(b)])
+  expect((await first.listProfiles()).map((item) => item.name).sort()).toEqual(['Alice', 'Bob'])
+})
+
+test('stale edits cannot overwrite another page or resurrect a deleted profile', async () => {
+  const workbench = createCareerWorkbench(memoryStorage())
+  const [saved] = await workbench.saveProfile(createEmptyResumeProfile())
+  await workbench.saveProfile({ ...saved!, name: '另一页面修改' })
+  await expect(workbench.saveProfile({ ...saved!, name: '旧编辑' })).rejects.toThrow('另一页面')
+  const latest = (await workbench.listProfiles())[0]!
+  await workbench.deleteProfile(latest.id, latest.revision)
+  await expect(workbench.saveProfile(latest)).rejects.toThrow('删除')
+  expect(await workbench.listProfiles()).toEqual([])
+})
+
 test('resume profiles persist, update, and delete through local storage', async () => {
   const storage = memoryStorage()
   const workbench = createCareerWorkbench(storage)
@@ -41,6 +62,21 @@ test('resume profiles persist, update, and delete through local storage', async 
 test('profile reads default to an empty local list', async () => {
   const workbench = createCareerWorkbench(memoryStorage())
   expect(await workbench.listProfiles()).toEqual([])
+})
+
+test('advice records preserve their resume and source evidence after reload and can be deleted', async () => {
+  const storage = memoryStorage()
+  const first = createCareerWorkbench(storage)
+  const profile = createEmptyResumeProfile()
+  profile.name = '分析时姓名'
+  await first.saveAdvice({ id: 'advice-1', profileSnapshot: profile, role: '前端', model: '现有模型', kind: 'research', text: '建议改写', status: 'complete', sources: [{ title: '来源', author: '作者', url: 'https://www.xiaohongshu.com/explore/aaaaaaaaaaaaaaaaaaaaaaaa', excerpt: '原文', contentKind: 'visible-note' }], createdAt: 1, updatedAt: 1, done: false })
+  profile.name = '后来修改'
+  const second = createCareerWorkbench(storage)
+  const [record] = await second.listAdvice()
+  expect(record?.profileSnapshot.name).toBe('分析时姓名')
+  expect(record?.sources[0]?.excerpt).toBe('原文')
+  await second.deleteAdvice('advice-1', record?.revision)
+  expect(await first.listAdvice()).toEqual([])
 })
 
 test('interview answers and review persist locally and can be deleted', async () => {

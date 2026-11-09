@@ -54,6 +54,8 @@ try {
   const origin = `chrome-extension://${new URL(workerTarget.url()).hostname}`
   const page = await browser.newPage()
   const errors = []
+  // Unsaved imports now warn before reload; accept the intentional test navigation.
+  page.on('dialog', (dialog) => dialog.accept())
   page.on('pageerror', (error) => errors.push(error.message))
   await page.setViewport({ width: 1440, height: 1100 })
   await page.goto(`${origin}/options.html`)

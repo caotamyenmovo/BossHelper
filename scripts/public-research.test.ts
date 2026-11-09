@@ -180,6 +180,12 @@ function fakeApi() {
   }
 }
 
+test('missing Xiaohongshu authorization is reported before opening a page', async () => {
+  const fake = fakeApi()
+  const api = { ...fake.api, permissions: { contains: async () => false } } as unknown as Parameters<typeof createXiaohongshuResearch>[0]
+  await expect(createXiaohongshuResearch(api).start('前端')).rejects.toThrow('网站访问权限')
+})
+
 test('web search keeps result cards until the user selects a note to read', async () => {
   const fake = fakeApi()
   const service = createXiaohongshuResearch(fake.api)

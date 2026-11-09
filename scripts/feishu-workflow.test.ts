@@ -3,6 +3,7 @@ import { afterAll, beforeEach, describe, expect, mock, test } from 'bun:test'
 import { computed, ref } from 'vue'
 
 import type { WorkflowData, TaskResult } from '../src/composables/useApplying/type'
+import { registerToastSink } from '../src/utils/toast'
 
 const log = {
   info: mock(() => {}),
@@ -38,7 +39,6 @@ mock.module('../src/composables/useApplying/handles', () => ({
 const globals = {
   computed,
   logger: log,
-  useToast: () => toast,
   delay: async () => {},
   jsonClone: (value: unknown) => JSON.parse(JSON.stringify(value)),
 }
@@ -47,6 +47,7 @@ const descriptors = new Map(
 )
 Object.assign(globalThis, globals)
 afterAll(() => {
+  registerToastSink(() => {})
   for (const [key, descriptor] of descriptors) {
     if (descriptor) Object.defineProperty(globalThis, key, descriptor)
     else Reflect.deleteProperty(globalThis, key)
@@ -143,6 +144,7 @@ async function settleSync() {
 }
 
 beforeEach(() => {
+  registerToastSink(toast.add)
   feishuUpsert.mockReset()
   feishuUpsert.mockImplementation(async () => ({ success: true }))
   storageGet.mockClear()

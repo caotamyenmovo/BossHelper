@@ -1,4 +1,5 @@
 import type { JSX } from 'vue/jsx-runtime'
+import UIcon from '@nuxt/ui/components/Icon.vue'
 
 export function ChromeStore() {
   return <UIcon class="size-12" name="i-logos-chrome-web-store" />

@@ -1,5 +1,6 @@
 {
   "extends": "./.wxt/tsconfig.json",
+  "include": ["src/**/*", ".wxt/**/*.d.ts", "auto-imports.d.ts", "components.d.ts", "wxt.config.ts"],
   "compilerOptions": {
     "jsx": "preserve",
     "jsxImportSource": "vue",

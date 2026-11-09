@@ -45,7 +45,7 @@ const stopLoading = (sources: PublicCareerSource[]) =>
       : source,
   )
 
-type Api = Pick<typeof import('#imports').browser, 'tabs' | 'storage'>
+type Api = Pick<typeof import('#imports').browser, 'tabs' | 'storage'> & Partial<Pick<typeof import('#imports').browser, 'permissions'>>
 export function createXiaohongshuResearch(api: Api, now = Date.now) {
   let queue = Promise.resolve<unknown>(undefined)
   function serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -70,6 +70,8 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
   }
   async function begin(role: string, sources?: PublicCareerSource[], urls?: string[]) {
     if (!role.trim()) throw new Error('请先填写目标岗位。')
+    if (api.permissions && !(await api.permissions.contains({ origins: ['https://www.xiaohongshu.com/*'] })))
+      throw new Error('缺少小红书网站访问权限。请在扩展管理 → BossHelper → 网站访问权限中允许 https://www.xiaohongshu.com/*，刷新小红书页面后重试；也可粘贴正文作为来源。')
     const tab = await api.tabs.create({ url: 'about:blank', active: true })
     if (tab.id === undefined) throw new Error('无法打开小红书页面。')
     const task = await save({
@@ -177,6 +179,8 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
           })
         }
         if (tab.status === 'loading') return task
+        if (api.permissions && !(await api.permissions.contains({ origins: ['https://www.xiaohongshu.com/*'] })))
+          return update({ ...task, status: 'error', message: '小红书网站访问权限未授权或已撤销。请到扩展管理允许小红书网站访问，刷新页面后重试；已取得内容会保留。' })
         if (tab.url) {
           const url = new URL(tab.url)
           if (
@@ -215,10 +219,13 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
               timer = setTimeout(() => reject(new Error('read timeout')), 3000)
             }),
           ])
-        } catch {
+        } catch (cause) {
+          const reason = cause instanceof Error ? cause.message : String(cause)
           return {
             ...task,
-            message: '正在等待小红书页面加载。若页面已打开，请刷新该标签页后返回。',
+            message: reason.includes('read timeout')
+              ? '小红书页面读取响应超时。请保持标签页打开；若页面已可阅读，请刷新该页，或停止后重试。'
+              : '尚未连接到小红书页面读取程序。请检查扩展的网站访问权限，刷新小红书标签页；更新扩展后需同时刷新工作台和小红书页面。',
           }
         } finally {
           clearTimeout(timer)
