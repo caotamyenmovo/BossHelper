@@ -84,7 +84,8 @@ try {
       label,
     )
   }
-  await clickText('求职工作台')
+  await page.waitForSelector('button[aria-label="求职工作台"]')
+  await page.click('button[aria-label="求职工作台"]')
   await clickText('从 Boss 读取')
   try {
     await page.waitForFunction(() => document.body.innerText.includes('已读取 Boss 在线简历'), {
@@ -106,7 +107,8 @@ try {
     throw error
   }
   await page.reload()
-  await clickText('求职工作台')
+  await page.waitForSelector('button[aria-label="求职工作台"]')
+  await page.click('button[aria-label="求职工作台"]')
   await page.waitForFunction(() => document.body.innerText.includes('已读取 Boss 在线简历'), {
     polling: 100,
   })

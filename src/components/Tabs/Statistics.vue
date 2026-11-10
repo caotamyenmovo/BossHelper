@@ -4,33 +4,8 @@ import { computed, onMounted, ref } from 'vue'
 import Alert from '@/components/Alert.vue'
 import { useConf } from '@/composables/conf'
 import { useHelper } from '@/composables/useHelper'
-import { useJobActions } from '@/composables/useJobActions'
 
 const helper = useHelper()
-const actions = useJobActions()
-const running = computed(() => helper.workflow?.status.value === 'running')
-const startDisabled = computed(() => running.value || helper.jobActionBusy.value)
-const deliveryMode = computed(() => {
-  const mode = helper.workflow?.lastMode.value
-  return mode === 'filter' || mode === 'generate' || mode === 'delivery' ? 'delivery' : 'auto'
-})
-const deliveryLabel = computed(() =>
-  helper.workflow?.status.value === 'stop' &&
-  (helper.workflow?.lastMode.value === 'auto' || helper.workflow?.lastMode.value === 'delivery')
-    ? '继续投递'
-    : '开始投递',
-)
-const filterLabel = computed(() =>
-  helper.workflow?.status.value === 'stop' && helper.workflow?.lastMode.value === 'filter'
-    ? '继续仅筛选'
-    : '开始仅筛选',
-)
-const generateLabel = computed(() =>
-  helper.workflow?.status.value === 'stop' && helper.workflow?.lastMode.value === 'generate'
-    ? '继续仅生成'
-    : '开始仅生成',
-)
-
 const { todayData, statisticsData } = helper.statistics
 
 // const { next, page } = usePager()
@@ -98,21 +73,21 @@ onMounted(() => {
       <div data-help="统计当天岗位过滤的比例,被过滤/总数">
         <div class="text-sm text-gray-500">过滤比例：</div>
         <div class="text-2xl font-semibold">
-          {{ (((todayData.total - todayData.success) / todayData.total) * 100).toFixed(0) }}
+          {{ (((todayData.total - todayData.success) / (todayData.total || 1)) * 100).toFixed(0) }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
       <div data-help="统计当天刷到了多少处理过的岗位,重复/总数">
         <div class="text-sm text-gray-500">重复比例：</div>
         <div class="text-2xl font-semibold">
-          {{ ((todayData.repeat / todayData.total) * 100).toFixed(0) }}
+          {{ ((todayData.repeat / (todayData.total || 1)) * 100).toFixed(0) }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
       <div data-help="统计当天岗位中的活跃情况,不活跃/总数">
         <div class="text-sm text-gray-500">活跃比例：</div>
         <div class="text-2xl font-semibold">
-          {{ ((todayData.activityFilter / todayData.total) * 100).toFixed(0) }}
+          {{ ((todayData.activityFilter / (todayData.total || 1)) * 100).toFixed(0) }}
           <span class="text-sm text-gray-400">%</span>
         </div>
       </div>
@@ -141,59 +116,5 @@ onMounted(() => {
         </div>
       </div>
     </div>
-    <div class="flex flex-row gap-2 items-center justify-center">
-      <UFieldGroup>
-        <UButton
-          color="primary"
-          :data-help="
-            deliveryMode === 'delivery' ? '仅投递现有 ready 队列中的岗位' : '筛选、生成招呼语并投递'
-          "
-          :loading="running"
-          :disabled="startDisabled"
-          @click="actions.run(deliveryLabel, () => helper.start(deliveryMode))"
-        >
-          {{ deliveryLabel }}
-        </UButton>
-        <UButton
-          color="neutral"
-          :disabled="startDisabled"
-          data-help="仅筛选岗位，不自动投递"
-          @click="actions.run(filterLabel, () => helper.start('filter'))"
-        >
-          {{ filterLabel }}
-        </UButton>
-        <UButton
-          color="neutral"
-          :disabled="startDisabled"
-          data-help="仅生成招呼语草稿，不自动投递"
-          @click="actions.run(generateLabel, () => helper.start('generate'))"
-        >
-          {{ generateLabel }}
-        </UButton>
-        <UButton
-          v-if="helper.workflow?.status.value === 'stop'"
-          color="warning"
-          data-help="重置已被筛选的岗位，开始将重新处理"
-          @click="helper.reset()"
-        >
-          重置筛选
-        </UButton>
-        <UButton
-          v-if="helper.workflow?.status.value === 'running'"
-          color="warning"
-          data-help="暂停后应该能继续"
-          @click="helper.stop()"
-        >
-          暂停
-        </UButton>
-      </UFieldGroup>
-      <UProgress
-        data-help="我会统计当天脚本投递的数量,该记录并不准确"
-        class="flex-1"
-        :model-value="(todayData.success / conf.formData.deliveryLimit.value) * 100"
-      />
-    </div>
   </div>
 </template>
-
-<style lang="scss"></style>

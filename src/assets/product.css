@@ -1,0 +1,1016 @@
+/* One accent scale for buttons, focus rings and portalled Nuxt UI controls. */
+@theme static {
+  --color-mist-50: #f1f5fa;
+  --color-mist-100: #e4ebf5;
+  --color-mist-200: #cdd9eb;
+  --color-mist-300: #b2c3df;
+  --color-mist-400: #91abcd;
+  --color-mist-500: #718fb7;
+  --color-mist-600: #536f96;
+  --color-mist-700: #465f82;
+  --color-mist-800: #394d68;
+  --color-mist-900: #2b3b51;
+  --color-mist-950: #1c2839;
+}
+/* Shared extension chrome; scoped so the host recruitment site keeps its own UI. */
+.product-theme {
+  --product-bg: #f3f5f8;
+  --product-panel: #fff;
+  --product-line: #dce2eb;
+  --product-ink: #263448;
+  --product-muted: #617087;
+  --product-tint: #e9eef6;
+  --ui-primary: #465f82;
+  --ui-bg: #fff;
+  --ui-bg-muted: #f3f5f8;
+  --ui-bg-elevated: #edf1f6;
+  --ui-text: #263448;
+  --ui-text-muted: #617087;
+  --ui-border: #dce2eb;
+  --ui-radius: 0.375rem;
+  color: var(--product-ink);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.55;
+}
+.product-theme button,
+.product-theme input,
+.product-theme textarea,
+.product-theme select {
+  font-family: inherit;
+}
+.product-theme .product-nav > button,
+.product-theme .settings-nav > button {
+  color: var(--product-ink);
+}
+.product-theme .product-nav > button[aria-current='page'] {
+  color: var(--ui-primary);
+  background: var(--product-tint);
+}
+.dark .product-theme input,
+.dark .product-theme textarea,
+.dark .product-theme button[role='combobox'] {
+  background: var(--product-panel);
+  color: var(--product-ink);
+}
+.product-theme button:disabled {
+  opacity: 0.5;
+}
+.dark .product-theme,
+:host-context(html[dark]) .product-theme,
+:host-context(html[data-darkreader-scheme='dark']) .product-theme {
+  --product-bg: #151b25;
+  --product-panel: #1c2431;
+  --product-line: #334155;
+  --product-ink: #e2e8f2;
+  --product-muted: #a4b0c2;
+  --product-tint: #29374d;
+  --ui-primary: #b2c3df;
+  --ui-bg: #1c2431;
+  --ui-bg-elevated: #29374d;
+  --ui-bg-muted: #222d3d;
+  --ui-text: #e2e8f2;
+  --ui-text-muted: #a4b0c2;
+  --ui-border: #334155;
+  color-scheme: dark;
+}
+.options-page {
+  display: flex;
+  min-height: 100vh;
+  background: var(--product-bg);
+}
+.options-sidebar {
+  width: 208px;
+  flex: 0 0 208px;
+  padding: 26px 12px 18px;
+  border-right: 1px solid var(--product-line);
+  background: var(--product-panel);
+  position: sticky;
+  top: 0;
+  height: 100vh;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+.product-brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-align: left;
+  padding: 0 8px 24px;
+  font-size: 16px;
+  font-weight: 650;
+  cursor: pointer;
+}
+.product-brand small {
+  display: block;
+  font-size: 10px;
+  font-weight: 400;
+  margin-top: 2px;
+  color: var(--product-muted);
+}
+.product-mark {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 7px;
+  background: var(--product-tint);
+  color: var(--ui-primary);
+}
+.nav-caption {
+  margin: 0;
+  padding: 6px 10px;
+  color: var(--product-muted);
+  font-size: 11px;
+  letter-spacing: 0.06em;
+}
+.product-nav {
+  display: grid;
+  gap: 3px;
+}
+.product-nav > button,
+.settings-nav > button {
+  width: 100%;
+  justify-content: flex-start;
+  min-height: 37px;
+  padding-inline: 10px;
+  font-size: 13px;
+}
+.product-nav [aria-current='page'] {
+  background: var(--product-tint);
+  color: var(--ui-primary);
+  font-weight: 600;
+}
+.settings-nav {
+  margin-top: 24px;
+  padding-top: 14px;
+  border-top: 1px solid var(--product-line);
+}
+.settings-links {
+  margin-top: 4px;
+  padding-left: 8px;
+  border-left: 1px solid var(--product-line);
+}
+.settings-links > button {
+  font-size: 12px;
+  min-height: 32px;
+}
+.sidebar-foot {
+  margin-top: auto;
+  padding: 30px 8px 0;
+  font-size: 10px;
+  color: var(--product-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.options-content {
+  flex: 1;
+  min-width: 0;
+}
+.options-topbar {
+  min-height: 57px;
+  padding: 12px 30px;
+  border-bottom: 1px solid var(--product-line);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  background: var(--product-panel);
+}
+.options-layout {
+  max-width: 1400px;
+  margin-inline: auto;
+  padding: 26px 30px 36px;
+}
+.options-layout.is-settings {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+  gap: 28px;
+}
+.options-main {
+  min-width: 0;
+}
+.options-help {
+  align-self: start;
+  position: sticky;
+  top: 24px;
+  padding: 16px 0 16px 18px;
+  border-left: 1px solid var(--product-line);
+  color: var(--product-muted);
+  font-size: 12px;
+  line-height: 1.8;
+}
+.options-help h2 {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--product-ink);
+  margin-bottom: 12px;
+}
+.options-help hr {
+  border-color: var(--product-line);
+  margin-block: 20px;
+}
+.options-help > button {
+  display: flex;
+  margin-top: 6px;
+}
+.options-footer {
+  position: sticky;
+  bottom: 0;
+  z-index: 20;
+  background: var(--product-panel);
+  border-top: 1px solid var(--product-line);
+  padding: 12px 30px;
+}
+.settings-context {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  border-bottom: 1px solid var(--product-line);
+  padding-bottom: 18px;
+}
+.settings-context .nav-caption {
+  padding-left: 0;
+}
+.settings-context h1 {
+  font-size: 21px;
+  font-weight: 600;
+}
+.workbench-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.workbench-heading h2 {
+  letter-spacing: -0.03em;
+  font-size: 23px;
+}
+.workbench-context {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 11px 14px;
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+  background: var(--product-panel);
+}
+.context-profile {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+.context-profile > button {
+  width: 185px;
+}
+.context-model {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.resume-layout {
+  display: grid;
+  grid-template-columns: 205px minmax(0, 1fr);
+  align-items: start;
+  gap: 24px;
+}
+.resume-list {
+  padding: 15px 12px;
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+  background: var(--product-panel);
+}
+.resume-list > div {
+  border-radius: 4px;
+  padding-inline: 7px;
+}
+.resume-list > div:has([aria-current='page']) {
+  background: var(--product-tint);
+}
+.resume-editor {
+  min-width: 0;
+  background: var(--product-panel);
+  padding: 20px;
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+}
+.product-empty {
+  min-height: 150px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 10px;
+  padding: 25px 16px;
+  color: var(--product-muted);
+}
+.research-layout {
+  min-width: 0;
+}
+.research-toolbar {
+  margin-bottom: 20px;
+}
+.research-toolbar > h3 {
+  display: none;
+}
+.research-toolbar > p {
+  max-width: 850px;
+  font-size: 12px;
+}
+.research-toolbar > div {
+  padding-top: 12px;
+}
+.research-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.2fr);
+  gap: 20px;
+  align-items: start;
+}
+.research-source-column,
+.research-result-column {
+  min-width: 0;
+}
+.research-sources,
+.advice-result {
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+  background: var(--product-panel);
+  padding: 18px;
+}
+.panel-title {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.panel-title > span:last-child {
+  margin-left: auto;
+}
+.research-sources > p {
+  font-size: 11px;
+}
+.research-sources article {
+  padding-block: 14px;
+  overflow-wrap: anywhere;
+}
+.research-sources article:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.research-sources article > a {
+  line-height: 1.6;
+  font-size: 14px;
+}
+.research-sources article > p {
+  font-size: 12px;
+}
+.research-source-column > details,
+.research-result-column > details {
+  margin-top: 14px;
+  border: 1px solid var(--product-line);
+  padding: 12px 14px;
+  border-radius: 6px;
+  background: var(--product-panel);
+}
+.research-layout summary,
+.interview-layout summary {
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--product-muted);
+}
+.advice-result > .space-y-2.border-y {
+  border-top: 0;
+}
+.advice-result [data-testid='research-advice'] {
+  background: transparent;
+  border: 0;
+  padding: 0;
+}
+.interview-layout {
+  max-width: 900px;
+  background: var(--product-panel);
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+  padding: 24px;
+  margin-inline: auto;
+}
+.interview-layout h4 {
+  font-size: 17px;
+  line-height: 1.7;
+}
+.interview-transcript {
+  margin-top: 24px;
+  border-top: 1px solid var(--product-line);
+  padding-top: 14px;
+}
+.interview-transcript > div {
+  padding-block: 14px;
+}
+.career-workbench [data-testid='advice-record'] {
+  background: var(--product-panel);
+}
+.delivery-shell {
+  margin-top: 24px;
+  max-width: calc(100vw - 32px);
+}
+.delivery-surface {
+  border: 1px solid var(--product-line);
+  border-radius: 8px;
+  background: var(--product-panel);
+}
+.delivery-heading {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  background: var(--product-panel);
+  border-bottom: 1px solid var(--product-line);
+  border-radius: 8px 8px 0 0;
+  padding: 12px 18px;
+}
+.delivery-brand-row,
+.delivery-account-row,
+.delivery-action-row,
+.delivery-actions,
+.delivery-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+.delivery-brand-row,
+.delivery-action-row {
+  justify-content: space-between;
+}
+.delivery-account-row {
+  gap: 6px;
+}
+.delivery-controls {
+  padding-top: 14px;
+}
+.delivery-state {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 12px;
+  color: var(--product-muted);
+}
+.status-dot {
+  width: 7px;
+  height: 7px;
+  background: var(--product-muted);
+  border-radius: 50%;
+}
+.status-dot.running {
+  background: var(--ui-primary);
+  box-shadow: 0 0 0 3px var(--product-tint);
+}
+.delivery-progress-row {
+  margin-top: 12px;
+  gap: 16px;
+  font-size: 11px;
+  color: var(--product-muted);
+}
+.delivery-progress-row strong {
+  font-weight: 600;
+  color: var(--product-ink);
+  margin-left: 5px;
+}
+.delivery-progress {
+  flex: 1;
+  min-width: 100px;
+}
+.delivery-sections {
+  padding: 8px 18px 0;
+}
+.job-list-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 18px;
+  border-top: 1px solid var(--product-line);
+}
+.product-theme .card-grid {
+  display: flex;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: 30px 24px 28px;
+  gap: 0;
+  isolation: isolate;
+  background: linear-gradient(180deg, var(--product-bg), var(--product-panel));
+  cursor: grab;
+  touch-action: pan-x pan-y;
+  scroll-padding-inline: 24px;
+  color: var(--product-ink);
+  scrollbar-color: var(--product-line) transparent;
+}
+.product-theme .card-grid::-webkit-scrollbar-track {
+  background: transparent;
+}
+.product-theme .card-grid::-webkit-scrollbar-thumb {
+  background: var(--product-line);
+  box-shadow: none;
+}
+.product-theme .job-card,
+.product-theme .job-card:not(:first-child) {
+  padding: 20px;
+  border: 1px solid var(--product-line);
+  background: var(--product-panel);
+  color: var(--product-ink);
+  border-radius: 6px;
+  box-shadow: none;
+  margin-left: 0;
+  flex: 0 0 320px;
+  min-width: 0;
+  max-width: calc(100vw - 82px);
+  height: 360px;
+  min-height: 360px;
+  max-height: 360px;
+  scroll-margin-top: 180px;
+  transform: none;
+}
+.product-theme .job-card:hover,
+.product-theme .job-card:focus-within {
+  border-color: var(--ui-primary);
+}
+.product-theme .job-card:nth-child(n),
+.product-theme .job-card:nth-child(n):hover,
+.product-theme .job-card:nth-child(n):focus-within {
+  transform: none;
+  margin-left: 0;
+  box-shadow: none;
+}
+.product-theme .boss-helper-card .job-card:nth-child(n) {
+  background: var(--product-panel);
+  color: var(--product-ink);
+  box-shadow: none;
+}
+.product-theme .job-card::after {
+  display: none;
+}
+.product-theme .job-card .card-title,
+.product-theme .job-card .company-name {
+  color: var(--product-ink);
+  font-size: 15px;
+}
+.product-theme .job-card .card-tag,
+.product-theme .job-card .author-row {
+  color: var(--product-muted);
+}
+.product-theme .job-card .card-status {
+  position: static;
+  width: fit-content;
+  max-width: 100%;
+  margin-top: 12px;
+  padding: 3px 8px;
+  border-radius: 4px;
+  letter-spacing: 0;
+  box-shadow: none;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.product-theme .job-card .card-footer {
+  padding-block: 8px;
+  font-size: 12px;
+  color: var(--product-muted);
+  overflow-wrap: anywhere;
+}
+.job-list-tools {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.product-theme .job-card.is-current {
+  border-color: var(--ui-primary);
+  outline: 2px solid var(--product-tint);
+}
+.product-theme .job-card .card-title {
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  min-height: 45px;
+  flex-shrink: 0;
+}
+.product-theme .boss-helper-card .job-card .card-salary {
+  color: var(--ui-primary);
+  font-weight: 650;
+  margin-bottom: 12px;
+  font-size: 22px;
+  letter-spacing: -0.02em;
+}
+.job-requirements {
+  font-size: 12px;
+  color: var(--product-muted);
+  margin: -5px 0 10px;
+}
+.product-theme .job-card .card-content {
+  cursor: default;
+  min-width: 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  overflow-wrap: anywhere;
+}
+.product-theme .job-card .card-tag {
+  font-size: 11px;
+  min-height: 17px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  margin-bottom: 10px;
+  flex-shrink: 0;
+}
+.product-theme .job-card .author-row,
+.product-theme .job-card .job-detail-toggle,
+.product-theme .job-card .card-status {
+  flex-shrink: 0;
+}
+.product-theme .job-card .card-status {
+  max-height: 50px;
+  overflow-y: auto;
+}
+.product-theme .job-card .author-row h4,
+.product-theme .job-card .company-name {
+  display: block;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  overflow: hidden;
+}
+.product-theme .job-card .active-time-tag {
+  font-size: 11px;
+  padding-block: 4px;
+  flex-shrink: 0;
+}
+.product-theme .card-grid.is-dragging,
+.product-theme .card-grid.is-dragging * {
+  cursor: grabbing;
+  user-select: none;
+}
+.product-theme .card-grid:focus-visible {
+  outline: 2px solid var(--ui-primary);
+  outline-offset: -3px;
+}
+.card-strip-footer {
+  padding: 8px 18px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 11px;
+  color: var(--product-muted);
+}
+.job-tags {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+}
+.job-tags > span {
+  max-width: 100%;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  background: var(--product-bg);
+  color: var(--product-muted);
+  font-size: 11px;
+  box-shadow: none;
+}
+.job-tag-toggle,
+.job-detail-toggle {
+  font-size: 12px;
+  color: var(--ui-primary);
+  cursor: pointer;
+}
+.job-detail-toggle {
+  align-self: flex-start;
+  padding-block: 10px;
+}
+.job-detail-toggle:hover,
+.job-tag-toggle:hover {
+  text-decoration: underline;
+}
+.product-theme .job-card .author-row {
+  border-top: 1px solid var(--product-line);
+  padding-top: 12px;
+  grid-template-columns: 32px minmax(0, 1fr);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.product-theme .job-card .company-name {
+  font-size: 13px;
+  font-weight: 500;
+}
+.product-theme .job-card .avatar,
+.company-placeholder {
+  width: 32px;
+  height: 32px;
+  border-radius: 6px;
+}
+.company-placeholder {
+  display: grid;
+  place-items: center;
+  background: var(--product-tint);
+  color: var(--ui-primary);
+}
+.product-theme .job-card .card-status {
+  background: var(--product-bg) !important;
+  color: var(--product-ink);
+  border-left: 3px solid var(--state-color);
+  font-weight: 400;
+}
+.operation-error {
+  border: 1px solid color-mix(in srgb, var(--ui-error) 35%, var(--product-line));
+  border-left: 3px solid var(--ui-error);
+  background: color-mix(in srgb, var(--ui-error) 5%, var(--product-panel));
+  color: var(--product-ink);
+  border-radius: 6px;
+  padding: 12px 16px;
+  font-size: 13px;
+  overflow-wrap: anywhere;
+}
+.operation-error strong {
+  font-weight: 600;
+}
+.operation-error p {
+  margin-top: 4px;
+}
+.operation-error details {
+  margin-top: 10px;
+}
+.operation-error summary {
+  cursor: pointer;
+  color: var(--product-muted);
+  font-size: 12px;
+}
+.operation-error pre {
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: 11px;
+  padding: 10px;
+  margin-top: 8px;
+  border: 1px solid var(--product-line);
+  background: var(--product-panel);
+}
+.product-theme .card-grid-overlay {
+  display: none;
+}
+/* Original deck interaction, with a small overlap and reserved lift clearance. */
+.product-theme .boss-helper-card .card-grid .job-card:nth-child(n) {
+  --deck-overlap: 24px;
+  border-radius: 16px;
+  padding: 22px;
+  height: 372px;
+  min-height: 372px;
+  max-height: 372px;
+  background: linear-gradient(145deg, var(--product-panel) 35%, var(--product-tint));
+  box-shadow:
+    -8px 5px 18px -13px #182b4b50,
+    0 2px 5px #182b4b08;
+  transform: none;
+  transform-origin: 50% 80%;
+  transition:
+    transform 260ms cubic-bezier(0.2, 0.75, 0.25, 1),
+    box-shadow 260ms ease,
+    border-color 180ms ease;
+}
+.product-theme .boss-helper-card .card-grid .job-card:not(:first-child) {
+  margin-left: calc(-1 * var(--deck-overlap));
+}
+.product-theme .boss-helper-card .card-grid .job-card:last-child {
+  margin-right: 34px;
+}
+.product-theme .boss-helper-card .card-grid .job-card .card-tag {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 12px;
+  min-height: 22px;
+}
+.card-tag > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-number {
+  margin-left: auto;
+  flex-shrink: 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  color: var(--ui-primary);
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+  padding: 1px 6px;
+}
+.product-theme .boss-helper-card .card-grid .job-card .card-title {
+  font-size: 16px;
+  min-height: 48px;
+  margin-bottom: 8px;
+}
+.product-theme .boss-helper-card .card-grid .job-card .card-salary {
+  font-size: 24px;
+  margin-bottom: 12px;
+}
+.product-theme .boss-helper-card .card-grid .job-detail-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  align-self: stretch;
+  margin-block: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--product-line);
+  border-radius: 8px;
+  background: var(--product-panel);
+  text-decoration: none;
+  transition:
+    background 180ms ease,
+    border-color 180ms ease;
+}
+.product-theme .boss-helper-card .card-grid .job-detail-toggle:hover {
+  border-color: var(--ui-primary);
+  background: var(--product-tint);
+}
+.detail-arrow {
+  font-size: 15px;
+}
+.product-theme .boss-helper-card .card-grid .job-card:focus-within {
+  transform: translateY(-9px);
+  z-index: 2;
+  border-color: var(--ui-primary);
+  box-shadow: 0 12px 24px -14px #182b4b70;
+}
+@media (hover: hover) and (pointer: fine) and (min-width: 761px) and (prefers-reduced-motion: no-preference) {
+  .product-theme .boss-helper-card .card-grid:not(.is-dragging) .job-card:hover {
+    transform: translateY(-12px) rotate(-1.25deg);
+    z-index: 2;
+    border-color: var(--ui-primary);
+    box-shadow: 0 16px 26px -14px #182b4b70;
+  }
+  .product-theme .boss-helper-card .card-grid:not(.is-dragging) .job-card:hover ~ .job-card,
+  .product-theme .boss-helper-card .card-grid:not(.is-dragging) .job-card:focus-within ~ .job-card {
+    transform: translateX(30px);
+  }
+}
+.product-theme .boss-helper-card .card-grid.is-dragging .job-card:nth-child(n) {
+  transform: none;
+  transition: none;
+}
+@media (hover: none), (pointer: coarse), (max-width: 760px) {
+  .product-theme .boss-helper-card .card-grid .job-card:nth-child(n) {
+    --deck-overlap: -12px;
+    transform: none;
+  }
+  .product-theme .card-grid {
+    padding-block: 18px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .product-theme .boss-helper-card .card-grid .job-card:nth-child(n) {
+    --deck-overlap: -12px;
+    transform: none;
+    transition: none;
+  }
+  .product-theme .boss-helper-card .card-grid .job-detail-toggle {
+    transition: none;
+  }
+}
+@media (max-width: 1100px) {
+  .options-layout {
+    padding: 22px;
+  }
+  .options-layout.is-settings {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .options-help {
+    position: static;
+    border-left: 0;
+    border-top: 1px solid var(--product-line);
+    padding: 18px 0 0;
+  }
+  .research-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .context-model {
+    max-width: 30%;
+  }
+}
+@media (max-width: 760px) {
+  .options-page {
+    display: block;
+  }
+  .options-sidebar {
+    width: auto;
+    height: auto;
+    position: static;
+    padding: 14px 16px;
+    border-right: 0;
+    border-bottom: 1px solid var(--product-line);
+  }
+  .product-brand {
+    padding: 0 0 12px;
+  }
+  .options-sidebar > .nav-caption,
+  .sidebar-foot {
+    display: none;
+  }
+  .product-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+  }
+  .product-nav > button {
+    width: auto;
+    min-height: 32px;
+  }
+  .settings-nav {
+    margin-top: 8px;
+    padding-top: 6px;
+  }
+  .settings-nav > button {
+    width: auto;
+    min-height: 30px;
+  }
+  .settings-links {
+    border-left: 0;
+    padding-left: 0;
+  }
+  .options-layout {
+    padding: 20px 16px;
+  }
+  .options-topbar {
+    padding-inline: 16px;
+    min-height: 44px;
+  }
+  .options-footer {
+    padding: 12px 16px;
+  }
+  .resume-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 16px;
+  }
+  .resume-list {
+    max-height: 230px;
+    overflow-y: auto;
+  }
+  .resume-editor,
+  .interview-layout {
+    padding: 16px;
+  }
+  .workbench-context {
+    flex-wrap: wrap;
+  }
+  .context-model {
+    max-width: 100%;
+  }
+  .context-profile {
+    gap: 7px;
+  }
+  .context-profile > button {
+    width: 160px;
+  }
+  .delivery-heading {
+    padding-inline: 12px;
+  }
+  .delivery-brand-row {
+    align-items: flex-start;
+  }
+  .delivery-progress-row {
+    gap: 8px;
+  }
+  .delivery-progress {
+    order: 1;
+    flex-basis: 100%;
+  }
+  .delivery-actions {
+    gap: 5px;
+  }
+  .delivery-actions > button {
+    font-size: 11px;
+  }
+  .delivery-sections {
+    overflow-x: auto;
+    padding-inline: 12px;
+  }
+}

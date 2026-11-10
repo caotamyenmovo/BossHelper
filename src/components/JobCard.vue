@@ -12,6 +12,7 @@ const actions = useJobActions()
 const props = defineProps<{
   job: JobData
   hover?: boolean
+  position?: number
 }>()
 
 const jobResult = computed(() => {
@@ -43,6 +44,15 @@ const jobStatus = computed(() => {
 const showDescription = ref(false)
 const showDescriptionLoading = ref(false)
 const showDescriptionMessage = ref<string | null>(null)
+const tagsExpanded = ref(false)
+const tags = computed(() => [
+  ...new Set(
+    [...props.job.skills, ...props.job.jobLabels].filter(
+      (tag) => tag && tag !== props.job.degreeName && tag !== props.job.experienceName,
+    ),
+  ),
+])
+const visibleTags = computed(() => (tagsExpanded.value ? tags.value : tags.value.slice(0, 5)))
 
 async function showDescriptionHandler() {
   showDescription.value = true
@@ -78,7 +88,7 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
     <div
       :id="`boss-card-${job.key}`"
       class="job-card"
-      :class="{ 'job-card-hover': hover }"
+      :class="{ 'job-card-hover': hover, 'is-current': helper.currentJob.value === job.key }"
       :style="{
         '--state-color': jobStatus.color,
         '--darkreader-bg--state-color': jobStatus.color,
@@ -86,22 +96,28 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
       }"
       v-if="job"
     >
-      <div class="card-tag">
-        {{ job.brand.industry }},{{ job.degreeName }},{{ job.brand.scale }}
+      <div
+        class="card-tag"
+        :title="[job.brand.industry, job.brand.scale].filter(Boolean).join(' · ')"
+      >
+        <span>{{
+          [job.brand.industry, job.brand.scale].filter(Boolean).join(' · ') || '岗位信息'
+        }}</span>
+        <span v-if="position" class="card-number" aria-hidden="true">{{
+          String(position).padStart(2, '0')
+        }}</span>
       </div>
       <!-- `https://www.zhipin.com/job_detail/${job.encryptJobId}.html`" -->
-      <a :href="job.link" target="_blank" class="card-title">
+      <a :href="job.link" target="_blank" class="card-title" :title="job.jobName">
         {{ job.jobName }}
       </a>
       <h3 class="card-salary">
         {{ job.salary }}
       </h3>
-      <div
-        v-show="showDescription"
-        class="card-content"
-        :title="job.jobDescription"
-        @click="showDescription = false"
-      >
+      <p v-if="job.experienceName || job.degreeName" class="job-requirements">
+        {{ [job.experienceName, job.degreeName].filter(Boolean).join(' · ') }}
+      </p>
+      <div v-show="showDescription" class="card-content" :title="job.jobDescription">
         <template v-if="showDescriptionLoading">
           加载中...
           <USkeleton class="h-4 w-full" />
@@ -114,27 +130,36 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
           {{ job.jobDescription }}
         </template>
       </div>
-      <div v-show="!showDescription" class="card-content" @click="showDescriptionHandler">
+      <div v-show="!showDescription" class="card-content">
         <div>
-          <div class="flex flex-wrap gap-1">
-            <UBadge v-for="tag in job.skills" :key="tag" size="sm" variant="subtle" color="warning">
+          <div class="job-tags">
+            <UBadge v-for="tag in visibleTags" :key="tag" size="sm" variant="soft" color="neutral">
               {{ tag }}
             </UBadge>
-            <UBadge
-              v-for="tag in job.jobLabels"
-              :key="tag"
-              size="sm"
-              variant="subtle"
-              color="success"
+            <button
+              v-if="tags.length > 5"
+              type="button"
+              class="job-tag-toggle"
+              :aria-expanded="tagsExpanded"
+              @click="tagsExpanded = !tagsExpanded"
             >
-              {{ tag }}
-            </UBadge>
+              {{ tagsExpanded ? '收起标签' : '+' + (tags.length - 5) + ' 个标签' }}
+            </button>
           </div>
         </div>
         <div class="card-footer" v-if="job.welfareList && job.welfareList.length > 0">
           {{ job.welfareList.join(',') }}
         </div>
       </div>
+      <button
+        type="button"
+        class="job-detail-toggle"
+        :aria-expanded="showDescription"
+        @click="showDescription ? (showDescription = false) : showDescriptionHandler()"
+      >
+        <span>{{ showDescription ? '收起详情' : '查看岗位详情' }}</span>
+        <span class="detail-arrow" aria-hidden="true">{{ showDescription ? '↑' : '↗' }}</span>
+      </button>
 
       <div v-if="job.activeTime || job.activeTimeStr" class="active-time-tag">
         <UBadge :color="getActiveTimeType(job)" variant="subtle">
@@ -149,11 +174,21 @@ function getActiveTimeType(job: JobData): 'success' | 'warning' | 'error' {
       </div>
 
       <div class="author-row">
-        <img alt="" class="avatar" height="80" :src="job.brand.logo" width="80" />
+        <img
+          v-if="job.brand.logo"
+          alt=""
+          class="avatar"
+          height="80"
+          :src="job.brand.logo"
+          width="80"
+        />
+        <span v-else class="company-placeholder" aria-hidden="true">{{
+          job.brand.name?.slice(0, 1) || '企'
+        }}</span>
         <div>
-          <span class="company-name">{{ job.brand.name }}</span>
+          <span class="company-name" :title="job.brand.name">{{ job.brand.name }}</span>
           <!-- <h4>{{ job.cityName }}/{{ job.areaDistrict }}/{{ job.businessDistrict }}</h4> -->
-          <h4>{{ job.address }}</h4>
+          <h4 :title="job.address">{{ job.address }}</h4>
         </div>
       </div>
       <div

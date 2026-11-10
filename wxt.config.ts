@@ -66,8 +66,8 @@ export default defineConfig({
         prose: false,
         ui: {
           colors: {
-            primary: 'teal',
-            neutral: 'gray',
+            primary: 'mist',
+            neutral: 'slate',
             warning: 'orange',
             success: 'emerald',
             error: 'rose',

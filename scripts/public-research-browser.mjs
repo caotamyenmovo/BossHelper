@@ -95,7 +95,8 @@ try {
       throw error
     }
   }
-  await click('求职工作台')
+  await page.waitForSelector('button[aria-label="求职工作台"]')
+  await page.click('button[aria-label="求职工作台"]')
   await click('简历建议')
   await page.type('[data-testid="research-role"]', '安全工程师')
   await click('检索公开内容')
@@ -157,7 +158,8 @@ try {
     ['建议内容1', '建议内容4', '建议内容3', '建议内容2', '建议内容5'],
   )
   await page.reload()
-  await click('求职工作台')
+  await page.waitForSelector('button[aria-label="求职工作台"]')
+  await page.click('button[aria-label="求职工作台"]')
   await click('简历建议')
   await waitText('安全工程师简历：项目经历写法')
   assert.equal(await page.$eval('[data-testid="research-role"]', (el) => el.value), '安全工程师')

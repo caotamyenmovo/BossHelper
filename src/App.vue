@@ -3,6 +3,7 @@ import type { TabsItem } from '@nuxt/ui'
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import ChatBox from '@/components/ChatBox.vue'
+import DeliveryControls from '@/components/DeliveryControls.vue'
 import JobCards from '@/components/JobCards.vue'
 import About from '@/components/Tabs/About.vue'
 import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
@@ -80,15 +81,23 @@ async function switchAccount() {
   }
 }
 
+const activeTab = ref('jobs')
+const jobStatusFilter = ref<'all' | 'error'>('all')
+function showFailures() {
+  activeTab.value = 'jobs'
+  jobStatusFilter.value = 'error'
+}
 const items = computed<TabsItem[]>(() => {
   const configs = [
-    { slot: 'statistics', label: '统计' },
-    { slot: 'filter', label: '筛选' },
-    { slot: 'appearance', label: '外观' },
+    { slot: 'jobs', value: 'jobs', label: '岗位列表' },
+    { slot: 'statistics', value: 'statistics', label: '详细统计' },
+    { slot: 'filter', value: 'filter', label: '筛选' },
+    { slot: 'appearance', value: 'appearance', label: '外观' },
 
-    { slot: 'logs', label: '日志' },
+    { slot: 'logs', value: 'logs', label: '日志' },
     {
       slot: 'about',
+      value: 'about',
       label: '关于&赞赏',
     },
   ] satisfies (TabsItem | boolean | null | undefined | '')[]
@@ -161,7 +170,7 @@ function openStore() {
 
 <template>
   <div
-    class="shadow-wrapper m-10 mx-auto mb-24"
+    class="shadow-wrapper product-theme delivery-shell mx-auto mb-24"
     :style="{
       width: `${appearanceConf.contentWidth}px`,
       marginRight:
@@ -176,28 +185,74 @@ function openStore() {
     ref="container"
   >
     <UApp :portal="container" :toaster="{ position: 'top-right', ui: { viewport: 'z-100000' } }">
-      <div class="bg-default rounded-xl overflow-hidden">
-        <div class="pt-3 pb-6 px-4 flex flex-col">
-          <div class="flex gap-2 items-center">
-            <span class="text-xl"
-              >{{ !appearanceConf.hideHeader ? 'Boss-Helper' : 'Helper'
-              }}<template v-if="accounts.activeAccount.value !== 'default'">
-                ({{ accounts.currentAccount.value?.label }})</template
-              ><template v-if="presetName"> (预设: {{ presetName }})</template></span
-            >
-            <UChip :show="isDot">
-              <UButton color="primary" variant="subtle" @click="openStore" size="xs">
-                v{{ VITE_VERSION }} {{ isDot ? ' 有更新' : '' }}
-              </UButton>
-            </UChip>
-            <span v-if="todayData.total > 0" style="margin-right: 15px">
-              今日投递: {{ todayData.success }}/{{ conf.formData.deliveryLimit.value }}
-            </span>
-            <span v-if="helper.workflow && helper.workflow.total.value > 0">
-              当前页面处理: {{ helper.workflow.current.value }}/{{ helper.workflow.total.value }}
-            </span>
+      <div class="delivery-surface">
+        <div class="delivery-heading">
+          <div class="delivery-brand-row">
+            <div class="flex items-center gap-2">
+              <UIcon name="i-lucide-briefcase-business" class="text-primary size-5" />
+              <h1 class="font-semibold text-base">BossHelper</h1>
+              <UChip :show="isDot"
+                ><UButton color="neutral" variant="ghost" size="xs" @click="openStore"
+                  >v{{ VITE_VERSION }}{{ isDot ? ' · 有更新' : '' }}</UButton
+                ></UChip
+              >
+            </div>
+            <div class="delivery-account-row">
+              <span class="text-xs text-muted">{{
+                accounts.currentAccount.value?.label || '默认账号'
+              }}</span
+              ><span v-if="presetName" class="text-xs text-muted">· {{ presetName }}</span>
+              <UButton
+                v-if="accounts.accounts.value.length > 1"
+                label="切换账号"
+                icon="i-lucide-users-round"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                :disabled="helper.workflowRunning.value"
+                :loading="switchingAccount"
+                @click="switchAccount"
+              />
+              <UDropdownMenu
+                :items="
+                  presetOptions.map((preset) => ({
+                    label: preset.label,
+                    onSelect: () => switchPreset(preset.value),
+                  }))
+                "
+                @update:open="(open: boolean) => open && loadPresetOptions()"
+                ><UButton
+                  label="切换预设"
+                  trailing-icon="i-lucide-chevron-down"
+                  size="xs"
+                  color="neutral"
+                  variant="outline"
+                  :disabled="helper.workflowRunning.value"
+                  :loading="switchingAccount"
+              /></UDropdownMenu>
+              <UButton
+                label="配置"
+                icon="i-lucide-settings-2"
+                size="xs"
+                color="neutral"
+                variant="ghost"
+                @click="counter.openOptionsPage()"
+              />
+              <UButton
+                label="对话"
+                icon="i-lucide-panel-right"
+                size="xs"
+                :variant="chatOpen ? 'soft' : 'ghost'"
+                @click="chatOpen = !chatOpen"
+              />
+            </div>
           </div>
-
+          <DeliveryControls
+            :disabled="switchingAccount"
+            @logs="showFailures"
+          />
+        </div>
+        <div class="delivery-sections">
           <div v-if="helper.netConf.value && helper.netConf.value.notification" class="netAlerts">
             <template
               v-for="item in helper.netConf.value.notification.filter(
@@ -209,74 +264,40 @@ function openStore() {
             </template>
           </div>
           <UTabs
+            v-model="activeTab"
             :items="items"
             variant="link"
             :ui="{ list: 'items-center' }"
             :unmount-on-hide="false"
           >
+            <template #jobs
+              ><p class="text-xs text-muted py-2">
+                查看本页岗位与处理结果；点击岗位可查看详情，右键可进行更多操作。
+              </p></template
+            >
             <template #statistics>
               <Statistics />
             </template>
             <template #filter>
-              <Filter />
+              <Filter :active="activeTab === 'filter'" />
             </template>
 
             <template #appearance><Appearance /></template>
             <template #logs><Logs /></template>
             <template #about><About /></template>
-            <template #list-trailing>
-              <UButton class="ml-2" size="xs" @click="counter.openOptionsPage()"> 配置 </UButton>
-              <UButton
-                class="ml-2"
-                size="xs"
-                color="primary"
-                @click.stop="
-                  () => {
-                    chatOpen = !chatOpen
-                  }
-                "
-              >
-                对话
-              </UButton>
-              <UButton
-                v-if="accounts.accounts.value.length > 1"
-                class="ml-2"
-                size="xs"
-                :disabled="helper.workflowRunning.value"
-                :loading="switchingAccount"
-                @click="switchAccount"
-                >切换账号</UButton
-              >
-              <UDropdownMenu
-                :items="
-                  presetOptions.map((preset) => ({
-                    label: preset.label,
-                    onSelect: () => switchPreset(preset.value),
-                  }))
-                "
-                @update:open="(open: boolean) => open && loadPresetOptions()"
-              >
-                <UButton
-                  class="ml-2"
-                  size="xs"
-                  :disabled="helper.workflowRunning.value"
-                  :loading="switchingAccount"
-                  >切换预设
-                </UButton>
-              </UDropdownMenu>
-              <UButton
+            <template #list-trailing
+              ><UButton
                 v-if="helper.netConf.value?.feedback"
-                class="ml-2"
+                label="反馈"
+                color="neutral"
+                variant="ghost"
                 size="xs"
-                color="info"
-                @click.stop="feedback"
-              >
-                反馈
-              </UButton>
-            </template>
+                class="ml-auto"
+                @click="feedback"
+            /></template>
           </UTabs>
         </div>
-        <JobCards />
+        <JobCards v-show="activeTab === 'jobs'" v-model:status-filter="jobStatusFilter" />
       </div>
       <ChatBox v-model:open="chatOpen" />
       <UModal

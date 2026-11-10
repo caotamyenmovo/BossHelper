@@ -30,6 +30,39 @@ const server = createServer(async (req, res) => {
     scenario === 'success'
       ? '目标岗位：安全工程师\n\n匹配结论\n简历包含安全巡检经历，但职责和成果还不够具体。\n\n优先修改建议（最多 5 条）\n建议 1｜项目经历\n简历原文：参与安全巡检项目\n问题：没有说明本人负责范围和结果。\n来源依据：来源 1《项目经历写法》，正文强调职责与可核查成果。\n建议改写：建议：补充项目职责和实际成果。\n待补充：无\n\n求职方向与下一步\n补充检查范围和可核验结果。'
       : '已收到的部分建议。'
+  if (scenario === 'responses' || scenario === 'invalid-responses') {
+    res.writeHead(200, { 'Content-Type': 'text/event-stream' })
+    const events =
+      scenario === 'responses'
+        ? [
+            {
+              type: 'response.created',
+              response: { id: 'resp_0', object: 'response', status: 'in_progress' },
+              sequence_number: 0,
+            },
+            { type: 'response.in_progress', response: { id: 'resp_0' } },
+            {
+              type: 'response.output_item.added',
+              output_index: 0,
+              item: { type: 'message', id: 'msg_1' },
+            },
+            {
+              type: 'response.output_text.delta',
+              item_id: 'msg_1',
+              delta: 'Responses 兼容修复：补充真实项目成果。',
+            },
+            {
+              type: 'response.output_item.done',
+              output_index: 0,
+              item: { type: 'message', id: 'msg_1' },
+            },
+            { type: 'response.completed', response: {} },
+          ]
+        : [{ type: 'response.output_text.delta', item_id: 'msg_1', delta: 42 }]
+    for (const event of events) res.write('data: ' + JSON.stringify(event) + '\n\n')
+    if (scenario === 'invalid-responses') res.end()
+    return
+  }
   if (!body.stream) {
     res.writeHead(200, { 'Content-Type': 'application/json' })
     res.write(
@@ -185,7 +218,8 @@ try {
     }
   }
   async function openAdvice() {
-    await click('求职工作台')
+    await page.waitForSelector('button[aria-label="求职工作台"]')
+    await page.click('button[aria-label="求职工作台"]')
     await page.waitForSelector('[aria-label="简历档案"] button')
     await page.evaluate(() =>
       [...document.querySelectorAll('[aria-label="简历档案"] button')]
@@ -358,6 +392,36 @@ try {
   assert(!(await page.evaluate(() => document.body.innerText.includes('生成超时'))))
   await page.screenshot({
     path: resolve('.scratch/research-grounded-advice/browser-preview.png'),
+    fullPage: true,
+  })
+  await worker.evaluate(async () => {
+    const stored = await chrome.storage.sync.get('conf-model')
+    stored['conf-model'][0].data.protocol = 'openai-responses'
+    await chrome.storage.sync.set(stored)
+  })
+  scenario = 'responses'
+  await page.reload()
+  await openAdvice()
+  await click('根据检索内容和简历生成修改意见')
+  await waitText('Responses 兼容修复：补充真实项目成果。')
+  await waitIdle()
+  assert.equal(requests.at(-1).path, '/v1/responses')
+  assert.equal(await page.$('.operation-error'), null)
+  scenario = 'invalid-responses'
+  await click('根据检索内容和简历生成修改意见')
+  await waitText('AI 接口返回的数据格式不兼容')
+  await waitIdle()
+  assert(await page.$eval('.operation-error', (el) => el.getBoundingClientRect().height < 180))
+  assert.equal(await page.$eval('.operation-error details', (el) => el.open), false)
+  await page.click('.operation-error summary')
+  assert(
+    await page.$eval('.operation-error pre', (el) =>
+      el.textContent.includes('Type validation failed'),
+    ),
+  )
+  assert(await page.$eval('.operation-error pre', (el) => el.getBoundingClientRect().height <= 222))
+  await page.screenshot({
+    path: resolve('.scratch/delivery-polish/error-details.png'),
     fullPage: true,
   })
   assert.equal(errors.length, 0, errors.join('\n'))

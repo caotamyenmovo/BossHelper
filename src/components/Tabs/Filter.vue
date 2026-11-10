@@ -12,6 +12,7 @@ import elmGetter from '@/utils/elmGetter'
 import { logger } from '@/utils/logger'
 
 const promptTestJobsKey = 'local:prompt-test-jobs'
+const props = withDefaults(defineProps<{ active?: boolean }>(), { active: true })
 
 const toast = useToast()
 const helper = useHelper()
@@ -56,12 +57,22 @@ const CONTAINER_ID = 'boss-helper-external-wrapper'
 const placeholder = ref<HTMLElement | null>(null)
 const externalWrapper = ref<HTMLElement | null>(null)
 
-const { x, y, width, height } = useElementBounding(placeholder)
+const { x, y, width, height, update: updateBounds } = useElementBounding(placeholder)
 const { width: windowWidth } = useWindowSize()
 
-watch([x, y, width, windowWidth], () => {
+// Tabs keep this component mounted; measure after its hidden panel becomes visible.
+watch(
+  () => props.active,
+  async () => {
+    await nextTick()
+    updateBounds()
+  },
+  { flush: 'post' },
+)
+
+watch([x, y, width, height, windowWidth, () => props.active], () => {
   if (!externalWrapper.value) return
-  if (height.value === 0 && y.value === 0) {
+  if (!props.active || (height.value === 0 && y.value === 0)) {
     externalWrapper.value.style.display = 'none'
     return
   }
@@ -134,7 +145,7 @@ onMounted(async () => {
     })
   }
 
-  wrapper.style.display = 'flex'
+  wrapper.style.display = props.active ? 'flex' : 'none'
 
   nextTick(() => {
     window.dispatchEvent(new Event('resize'))

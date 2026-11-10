@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
+import OperationError from '@/components/OperationError.vue'
 
-import { createCareerInterview } from '@/composables/careerInterview'
 import { createCareerAssistant, hasResearchContent } from '@/composables/careerAi'
 import type { ParsedResume } from '@/composables/careerAi'
 import { runCareerCompletion } from '@/composables/careerCompletion'
 import type { CareerCompletionOptions } from '@/composables/careerCompletion'
+import { createCareerInterview } from '@/composables/careerInterview'
 import { useConf } from '@/composables/conf'
 import { searchPublicXiaohongshu } from '@/composables/publicResearch'
 import type { PublicCareerSource } from '@/composables/publicResearch'
@@ -20,6 +21,7 @@ import { counter } from '@/message'
 import { BOSS_IMPORT_KEY } from '@/utils/bossResumeImport'
 import type { BossImportState } from '@/utils/bossResumeImport'
 import { jsonClone } from '@/utils/deepmerge'
+import { exportJson } from '@/utils/jsonImportExport'
 import { extractResumeFields, hasResumeFields } from '@/utils/resumeFields'
 import { createXiaohongshuResearch } from '@/utils/xiaohongshuResearch'
 
@@ -27,8 +29,12 @@ const workbench = createCareerWorkbench({
   storageGet: (key, fallback) => counter.storageGet(key, fallback),
   storageSet: (key, value) => counter.storageSet(key, value),
   async careerWrite(command) {
-    const result = await browser.runtime.sendMessage({ type: 'career-repository-write', command }) as { records?: unknown; error?: string } | undefined
-    if (!result || result.error) throw new Error(result?.error || '扩展后台未响应，请保留输入并重新加载扩展后重试。')
+    const result = (await browser.runtime.sendMessage({
+      type: 'career-repository-write',
+      command,
+    })) as { records?: unknown; error?: string } | undefined
+    if (!result || result.error)
+      throw new Error(result?.error || '扩展后台未响应，请保留输入并重新加载扩展后重试。')
     return result.records
   },
 })
@@ -67,9 +73,31 @@ const configuredModelName = computed(() => {
   const provider = models.modelData.value.find((item) => item.key === configuredModelKey.value)
   return provider ? `${provider.name} · ${provider.data?.model ?? ''}` : '尚未配置'
 })
-const view = ref<'resume' | 'research' | 'interview' | 'history' | 'advice-history'>('resume')
+type CareerView = 'resume' | 'research' | 'interview' | 'history' | 'advice-history'
+const view = defineModel<CareerView>('view', { default: 'resume' })
+const viewInfo = computed(
+  () =>
+    ({
+      resume: ['简历档案', '整理你的经历，让每次求职都有清晰的起点。'],
+      research: ['简历建议', '查阅岗位经验，结合来源打磨你的简历。'],
+      interview: ['模拟面试', '一次专注一道问题，用文字练习表达。'],
+      history: ['面试复盘', '回顾回答与反馈，继续未完成的练习。'],
+      'advice-history': ['建议记录', '回看每次分析，以及当时的简历和经验来源。'],
+    })[view.value],
+)
+function navigateView(value: CareerView) {
+  if (value === 'research') openResearch()
+  else if (value === 'history' || value === 'advice-history') void openHistory(value)
+  else view.value = value
+}
+function selectContext(value: string | undefined) {
+  const profile = profiles.value.find((item) => item.id === value)
+  if (profile && profile.id !== selectedId.value) editProfile(profile)
+}
+defineExpose({ navigateView })
 const adviceRecords = ref<CareerAdviceRecord[]>([])
 const pendingAdvice = ref<CareerAdviceRecord[]>([])
+const adviceRetryBusy = ref(false)
 let profileContextEpoch = 0
 const analysis = ref('')
 const analysisBusy = ref(false)
@@ -104,16 +132,27 @@ const pastedSourceText = ref('')
 const interviewRole = ref('')
 const interviewCompany = ref('')
 const interviewDescription = ref('')
-const interviewFlow = createCareerInterview(workbench, createCareerAssistant(completeWithConfiguredAi))
+const interviewFlow = createCareerInterview(
+  workbench,
+  createCareerAssistant(completeWithConfiguredAi),
+)
 const currentSession = computed(() => interviewFlow.state.session)
 const currentQuestion = computed(() => currentSession.value?.currentQuestion ?? '')
-const interviewAnswer = computed({ get: () => currentSession.value?.draftAnswer ?? '', set: (text: string) => interviewFlow.setAnswer(text) })
+const interviewAnswer = computed({
+  get: () => currentSession.value?.draftAnswer ?? '',
+  set: (text: string) => interviewFlow.setAnswer(text),
+})
 const interviewBusy = computed(() => interviewFlow.state.busy)
 const interviews = ref<CareerInterviewSession[]>([])
 const selectedProfile = computed(
   () => draft.value ?? profiles.value.find((profile) => profile.id === selectedId.value),
 )
-const draftDirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== JSON.stringify(profiles.value.find((item) => item.id === draft.value?.id)))
+const draftDirty = computed(
+  () =>
+    !!draft.value &&
+    JSON.stringify(draft.value) !==
+      JSON.stringify(profiles.value.find((item) => item.id === draft.value?.id)),
+)
 function allowDiscardDraft() {
   return !draftDirty.value || window.confirm('当前简历有未保存的修改，放弃这些修改并切换？')
 }
@@ -142,18 +181,22 @@ function clearProfileContext(keepSources = false) {
     void xhsResearch.cancel().catch(() => undefined)
   }
 }
-watch(draft, () => {
-  if (draftDirty.value) {
-    profileContextEpoch++
-    saved.value = false
-    analysisController?.abort()
-    researchAdviceController?.abort()
-    analysis.value = ''
-    researchSummary.value = ''
-    analysisStatus.value = ''
-    researchAdviceStatus.value = ''
-  }
-}, { deep: true, flush: 'sync' })
+watch(
+  draft,
+  () => {
+    if (draftDirty.value) {
+      profileContextEpoch++
+      saved.value = false
+      analysisController?.abort()
+      researchAdviceController?.abort()
+      analysis.value = ''
+      researchSummary.value = ''
+      analysisStatus.value = ''
+      researchAdviceStatus.value = ''
+    }
+  },
+  { deep: true, flush: 'sync' },
+)
 
 // Keep references to both stored lists so existing internship records remain editable.
 const experienceSections = computed(() => {
@@ -203,24 +246,50 @@ async function completeWithConfiguredAi(
 const assistant = createCareerAssistant(completeWithConfiguredAi)
 
 function newAdviceRecord(kind: CareerAdviceRecord['kind']): CareerAdviceRecord {
-  return { id: crypto.randomUUID(), kind, profileSnapshot: jsonClone(selectedProfile.value!), role: kind === 'research' ? researchRole.value.trim() : selectedProfile.value?.targetRoles.join('、') ?? '', model: configuredModelName.value, sources: kind === 'research' ? jsonClone(researchSources.value.filter(hasResearchContent)) : [], text: '', status: 'partial', done: false, createdAt: Date.now(), updatedAt: Date.now() }
+  return {
+    id: crypto.randomUUID(),
+    kind,
+    profileSnapshot: jsonClone(selectedProfile.value!),
+    role:
+      kind === 'research'
+        ? researchRole.value.trim()
+        : (selectedProfile.value?.targetRoles.join('、') ?? ''),
+    model: configuredModelName.value,
+    sources: kind === 'research' ? jsonClone(researchSources.value.filter(hasResearchContent)) : [],
+    text: '',
+    status: 'partial',
+    done: false,
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+  }
 }
 async function saveAdviceRecord(record: CareerAdviceRecord) {
   try {
     adviceRecords.value = await workbench.saveAdvice(record)
     pendingAdvice.value = pendingAdvice.value.filter((item) => item.id !== record.id)
   } catch (cause) {
-    if (!pendingAdvice.value.some((item) => item.id === record.id)) pendingAdvice.value.push(jsonClone(record))
+    if (!pendingAdvice.value.some((item) => item.id === record.id))
+      pendingAdvice.value.push(jsonClone(record))
     error.value = `建议尚未保存，内容已保留，可重试保存：${cause instanceof Error ? cause.message : String(cause)}`
   }
 }
 async function retryAdviceSave() {
+  if (adviceRetryBusy.value) return
+  adviceRetryBusy.value = true
+  if (error.value.startsWith('建议尚未保存，')) error.value = ''
+  try {
   for (const record of [...pendingAdvice.value]) await saveAdviceRecord(record)
+  } finally {
+    adviceRetryBusy.value = false
+  }
 }
 async function removeAdvice(record: CareerAdviceRecord) {
   if (!window.confirm('删除这条建议及其来源记录？')) return
-  try { adviceRecords.value = await workbench.deleteAdvice(record.id, record.revision) }
-  catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  try {
+    adviceRecords.value = await workbench.deleteAdvice(record.id, record.revision)
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  }
 }
 async function toggleAdvice(record: CareerAdviceRecord) {
   await saveAdviceRecord({ ...jsonClone(record), done: !record.done })
@@ -250,7 +319,10 @@ async function analyzeResume() {
     })
     received = result
     record.status = 'complete'
-    if (owner === profileContextEpoch) { analysis.value = result; analysisStatus.value = '已完成' }
+    if (owner === profileContextEpoch) {
+      analysis.value = result
+      analysisStatus.value = '已完成'
+    }
   } catch (cause) {
     if (owner !== profileContextEpoch) return
     if (controller.signal.aborted) analysisStatus.value = '已停止生成，已保留收到的内容。'
@@ -259,7 +331,10 @@ async function analyzeResume() {
       error.value = cause instanceof Error ? cause.message : String(cause)
     }
   } finally {
-    if (received.trim()) { record.text = received; await saveAdviceRecord(record) }
+    if (received.trim()) {
+      record.text = received
+      await saveAdviceRecord(record)
+    }
     analysisController = undefined
     analysisBusy.value = false
   }
@@ -413,24 +488,22 @@ async function createResearchAdvice() {
   researchAdviceStatus.value = '正在连接模型…'
   error.value = ''
   try {
-    const result = await assistant.summarizeResearch(
-      role,
-      record.sources,
-      record.profileSnapshot,
-      {
-        signal: controller.signal,
-        onText: (text) => {
-          received = text
-          if (owner === profileContextEpoch) researchSummary.value = text
-        },
-        onStatus: (status) => {
-          if (owner === profileContextEpoch) researchAdviceStatus.value = status
-        },
+    const result = await assistant.summarizeResearch(role, record.sources, record.profileSnapshot, {
+      signal: controller.signal,
+      onText: (text) => {
+        received = text
+        if (owner === profileContextEpoch) researchSummary.value = text
       },
-    )
+      onStatus: (status) => {
+        if (owner === profileContextEpoch) researchAdviceStatus.value = status
+      },
+    })
     received = result
     record.status = 'complete'
-    if (owner === profileContextEpoch) { researchSummary.value = result; researchAdviceStatus.value = '已完成' }
+    if (owner === profileContextEpoch) {
+      researchSummary.value = result
+      researchAdviceStatus.value = '已完成'
+    }
   } catch (cause) {
     if (owner !== profileContextEpoch) return
     if (controller.signal.aborted) researchAdviceStatus.value = '已停止生成，已保留收到的内容。'
@@ -439,7 +512,10 @@ async function createResearchAdvice() {
       error.value = cause instanceof Error ? cause.message : String(cause)
     }
   } finally {
-    if (received.trim()) { record.text = received; await saveAdviceRecord(record) }
+    if (received.trim()) {
+      record.text = received
+      await saveAdviceRecord(record)
+    }
     researchAdviceController = undefined
     researchAdviceBusy.value = false
   }
@@ -483,25 +559,50 @@ async function summarizePastedSource() {
 async function startInterview() {
   const profile = selectedProfile.value
   const role = interviewRole.value.trim()
-  if (!profile || !role) { error.value = '请先选择简历档案和目标岗位。'; return }
-  await interviewFlow.start({ profile: jsonClone(profile), role, company: interviewCompany.value.trim(), jobDescription: interviewDescription.value.trim() })
+  if (!profile || !role) {
+    error.value = '请先选择简历档案和目标岗位。'
+    return
+  }
+  await interviewFlow.start({
+    profile: jsonClone(profile),
+    role,
+    company: interviewCompany.value.trim(),
+    jobDescription: interviewDescription.value.trim(),
+  })
   interviews.value = await workbench.listInterviews()
 }
-async function submitInterviewAnswer() { await interviewFlow.submit(); interviews.value = await workbench.listInterviews() }
-async function askNextQuestion() { await interviewFlow.next(); interviews.value = await workbench.listInterviews() }
-async function finishInterview() { await interviewFlow.finish(); interviews.value = await workbench.listInterviews() }
+async function submitInterviewAnswer() {
+  await interviewFlow.submit()
+  interviews.value = await workbench.listInterviews()
+}
+async function askNextQuestion() {
+  await interviewFlow.next()
+  interviews.value = await workbench.listInterviews()
+}
+async function finishInterview() {
+  await interviewFlow.finish()
+  interviews.value = await workbench.listInterviews()
+}
 async function removeInterview(session: CareerInterviewSession) {
   if (!window.confirm('删除这次模拟面试和复盘？此操作不可撤销。')) return
   try {
     if (currentSession.value?.id === session.id && !(await interviewFlow.close())) return
     interviews.value = await workbench.deleteInterview(session.id, session.revision)
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  }
 }
 async function openInterview(session: CareerInterviewSession) {
   if (!(await interviewFlow.close())) return
   const latest = (await workbench.listInterviews()).find((item) => item.id === session.id)
-  if (!latest) { error.value = '这次面试已被删除，请刷新记录。'; return }
-  await interviewFlow.open(latest, profiles.value.find((item) => item.id === session.profileId))
+  if (!latest) {
+    error.value = '这次面试已被删除，请刷新记录。'
+    return
+  }
+  await interviewFlow.open(
+    latest,
+    profiles.value.find((item) => item.id === session.profileId),
+  )
   view.value = 'interview'
 }
 async function closeInterview() {
@@ -513,10 +614,15 @@ async function openHistory(kind: 'history' | 'advice-history') {
   try {
     if (kind === 'history') interviews.value = await workbench.listInterviews()
     else adviceRecords.value = await workbench.listAdvice()
-  } catch (cause) { error.value = cause instanceof Error ? cause.message : String(cause) }
+  } catch (cause) {
+    error.value = cause instanceof Error ? cause.message : String(cause)
+  }
 }
 function beforeLeave(event: BeforeUnloadEvent) {
-  if (draftDirty.value || pendingAdvice.value.length || interviewFlow.state.dirty) { event.preventDefault(); event.returnValue = '' }
+  if (draftDirty.value || pendingAdvice.value.length || interviewFlow.state.dirty) {
+    event.preventDefault()
+    event.returnValue = ''
+  }
 }
 
 function openResearch() {
@@ -779,7 +885,11 @@ async function saveProfile() {
     const stored = profiles.value.find((item) => item.id === submitted.id)!
     if (draft.value?.id === submitted.id) {
       selectedId.value = submitted.id
-      draft.value = { ...jsonClone(draft.value), revision: stored.revision, updatedAt: stored.updatedAt }
+      draft.value = {
+        ...jsonClone(draft.value),
+        revision: stored.revision,
+        updatedAt: stored.updatedAt,
+      }
       saved.value = !draftDirty.value
       if (saved.value) importReviewed.value = false
     }
@@ -835,11 +945,10 @@ onBeforeUnmount(() => {
 
 <template>
   <section class="career-workbench space-y-5" aria-labelledby="career-title">
-    <header class="flex flex-wrap items-start justify-between gap-4 border-b border-default pb-4">
+    <header class="workbench-heading">
       <div>
-        <h2 id="career-title" class="text-xl font-semibold">求职工作台</h2>
-        <p class="mt-1 text-sm text-muted">管理简历档案，并在此准备求职材料和面试。</p>
-        <p class="mt-1 text-xs text-muted">AI 模型：{{ configuredModelName }}</p>
+        <h2 id="career-title" class="text-xl font-semibold">{{ viewInfo[0] }}</h2>
+        <p class="mt-1 text-sm text-muted">{{ viewInfo[1] }}</p>
       </div>
       <div v-if="view === 'resume'" class="flex flex-wrap gap-2">
         <input
@@ -870,39 +979,46 @@ onBeforeUnmount(() => {
         <UButton label="新建简历" icon="i-lucide-plus" @click="newProfile()" />
       </div>
     </header>
-    <div class="rounded border border-default bg-elevated/40 p-3 text-sm" aria-label="当前求职上下文">
-      <p>当前简历：{{ selectedProfile?.name || (selectedProfile ? '未命名简历' : '尚未选择') }} · {{ draftDirty ? '有未保存修改' : '已保存版本' }}</p>
-      <p class="mt-1 text-xs text-muted">选择简历 → 确认目标岗位 → 查阅经验并生成建议 → 面试练习与复盘。AI 分析使用当前可见简历快照，编辑内容不会自动发送。</p>
+    <div class="workbench-context" aria-label="当前求职上下文">
+      <div class="context-profile">
+        <UIcon name="i-lucide-file-user" class="text-muted size-4 shrink-0" /><span
+          class="text-xs text-muted"
+          >当前简历</span
+        ><USelect
+          aria-label="当前简历"
+          :model-value="selectedId || undefined"
+          :items="
+            profiles.map((profile) => ({ label: profile.name || '未命名简历', value: profile.id }))
+          "
+          :placeholder="draft ? '新建简历草稿' : '选择简历'"
+          :disabled="
+            loading ||
+            saving ||
+            analysisBusy ||
+            researchAdviceBusy ||
+            researchBusy ||
+            researchWebBusy ||
+            interviewBusy ||
+            fileBusy ||
+            bossImportBusy
+          "
+          @update:model-value="selectContext"
+        /><span class="text-xs" :class="draftDirty ? 'text-warning' : 'text-muted'">{{
+          draftDirty ? '有未保存修改' : selectedProfile ? '已保存版本' : '尚未选择'
+        }}</span>
+      </div>
+      <span class="context-model text-xs text-muted" :title="configuredModelName"
+        ><UIcon name="i-lucide-sparkles" />AI：{{ configuredModelName }}</span
+      >
     </div>
 
-    <nav aria-label="求职工作台功能" class="flex flex-wrap gap-1 border-b border-default pb-3">
-      <UButton
-        label="简历档案"
-        :variant="view === 'resume' ? 'soft' : 'ghost'"
-        @click="view = 'resume'"
-      />
-      <UButton
-        label="简历建议"
-        :variant="view === 'research' ? 'soft' : 'ghost'"
-        @click="openResearch"
-      />
-      <UButton
-        label="模拟面试"
-        :variant="view === 'interview' ? 'soft' : 'ghost'"
-        @click="view = 'interview'"
-      />
-      <UButton
-        label="面试复盘"
-        :variant="view === 'history' ? 'soft' : 'ghost'"
-        @click="openHistory('history')"
-      />
-      <UButton label="建议记录" :variant="view === 'advice-history' ? 'soft' : 'ghost'" @click="openHistory('advice-history')" />
-    </nav>
-
-    <UAlert v-if="error" color="error" title="操作失败" :description="error" />
+    <OperationError :message="error" />
     <div v-if="pendingAdvice.length" class="rounded border border-warning p-3">
       <p class="text-sm">{{ pendingAdvice.length }} 条建议尚未保存，请保留页面并重试。</p>
-      <UButton label="重试保存建议" size="sm" @click="retryAdviceSave" />
+      <div class="flex gap-2 mt-2">
+        <UButton label="重试保存建议" size="sm" :loading="adviceRetryBusy" :disabled="adviceRetryBusy" @click="retryAdviceSave" />
+        <UButton label="导出未保存建议" size="sm" variant="outline" color="neutral" @click="exportJson(pendingAdvice, '未保存的求职建议')" />
+      </div>
     </div>
     <section v-if="view === 'resume'" class="space-y-5">
       <p v-if="bossImportMessage" role="status" class="text-sm text-muted">
@@ -934,8 +1050,8 @@ onBeforeUnmount(() => {
 
       <p v-if="loading" role="status" class="py-8 text-sm text-muted">正在读取本地简历档案…</p>
 
-      <div v-else class="grid items-start gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
-        <aside aria-label="简历档案" class="space-y-2">
+      <div v-else class="resume-layout">
+        <aside aria-label="简历档案" class="resume-list space-y-2">
           <p class="pb-1 text-xs font-medium text-muted">本地简历档案</p>
           <p v-if="profiles.length === 0" class="py-3 text-sm text-muted">
             还没有简历档案。新建一份，或稍后从文件和 Boss 个人资料导入。
@@ -968,7 +1084,7 @@ onBeforeUnmount(() => {
           </div>
         </aside>
 
-        <div v-if="draft" class="space-y-5">
+        <div v-if="draft" class="resume-editor space-y-5">
           <div class="flex items-center justify-between gap-3 border-b border-default pb-3">
             <h3 class="text-base font-semibold">
               {{ selectedId ? '编辑简历档案' : '新建简历档案' }}
@@ -1116,46 +1232,13 @@ onBeforeUnmount(() => {
       </div>
     </section>
 
-    <section v-else-if="view === 'research'" class="max-w-3xl space-y-5">
-      <div class="space-y-2">
+    <section v-else-if="view === 'research'" class="research-layout">
+      <div class="research-toolbar space-y-2">
         <h3 class="text-base font-semibold">岗位相关经验与简历建议</h3>
         <p class="text-sm text-muted">
           可打开小红书网页搜索并读取页面中的帖子，也可尝试公开索引。检索词仅包含岗位方向与“简历”；点击生成建议时，才会将当前简历和来源内容发送给配置的
           AI。
         </p>
-        <div class="space-y-2 border-y border-default py-3">
-          <p class="text-sm">
-            当前简历：{{
-              selectedProfile?.name ||
-              (selectedProfile ? '未命名简历' : '请先在简历档案中选择一份简历')
-            }}
-          </p>
-          <p class="text-sm text-muted">
-            检索只显示帖子卡片。点击单条帖子下方的“读取正文和评论”后，才会打开该帖子并读取正文和已加载评论中的前
-            5 条高赞评论。
-          </p>
-          <UButton
-            label="根据检索内容和简历生成修改意见"
-            data-testid="generate-research-advice"
-            icon="i-lucide-sparkles"
-            :loading="researchAdviceBusy"
-            :disabled="
-              !selectedProfile ||
-              !researchContentCount ||
-              analysisBusy ||
-              researchBusy ||
-              researchWebBusy
-            "
-            @click="createResearchAdvice"
-          />
-          <p class="text-xs text-muted">
-            {{
-              researchContentCount
-                ? `已取得 ${researchContentCount} 条正文或摘要，将与当前简历一起提交给 AI。`
-                : '尚无可用于分析的内容。请先检索，再手动读取帖子正文和评论，或在下方粘贴内容。'
-            }}
-          </p>
-        </div>
         <div class="flex flex-wrap items-end gap-2">
           <UFormField label="目标岗位" orientation="vertical" class="min-w-60 flex-1">
             <UInput
@@ -1196,146 +1279,238 @@ onBeforeUnmount(() => {
           @click="stopWebResearch"
         />
       </div>
-      <div v-if="researchAdviceStatus || researchSummary" class="space-y-3">
-        <div class="flex items-center gap-3">
-          <p v-if="researchAdviceStatus" role="status" class="text-sm text-muted">
-            {{ researchAdviceStatus }}
-          </p>
-          <UButton
-            v-if="researchAdviceBusy"
-            label="停止生成"
-            color="neutral"
-            variant="outline"
-            size="sm"
-            @click="stopResearchAdvice"
-          />
+      <div class="research-columns">
+        <div class="research-source-column">
+          <section class="research-sources space-y-3">
+            <h3 class="panel-title">
+              <UIcon name="i-lucide-library" />经验来源
+              <span class="text-muted text-xs font-normal">{{ researchSources.length }} 条</span>
+            </h3>
+            <div v-if="!researchSources.length" class="product-empty">
+              <UIcon name="i-lucide-search" class="size-7 text-muted" />
+              <p>
+                {{ researchBusy || researchWebBusy ? '正在检索岗位相关经验…' : '还没有经验来源' }}
+              </p>
+              <p class="text-xs text-muted">输入目标岗位开始检索，也可粘贴链接和正文。</p>
+            </div>
+            <p class="text-sm text-muted">
+              点击单条帖子下方的按钮读取正文和评论。评论按页面显示点赞数排序，取已加载内容中前 5
+              条；仅有标题的帖子不参与 AI 分析。
+            </p>
+            <article
+              v-for="source in researchSources"
+              :key="source.url"
+              class="border-b border-default pb-3"
+            >
+              <a
+                :href="source.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="font-medium text-primary"
+                >{{ source.title }}</a
+              >
+              <p class="mt-1 text-xs text-muted">
+                {{ sourceKindLabels[source.contentKind || 'search-snippet'] }}
+              </p>
+              <p v-if="source.author" class="mt-1 text-xs text-muted">{{ source.author }}</p>
+              <p class="mt-1 whitespace-pre-wrap text-sm text-muted">{{ source.excerpt }}</p>
+              <div v-if="source.commentCoverage" class="mt-3 space-y-2">
+                <h5 class="text-sm font-medium">
+                  高赞评论 · 已加载评论中前 {{ source.comments?.length || 0 }} 条
+                </h5>
+                <p class="text-xs text-muted" data-testid="comment-coverage">
+                  {{ source.commentCoverage.message }}
+                </p>
+                <ol v-if="source.comments?.length" class="space-y-2" data-testid="source-comments">
+                  <li
+                    v-for="comment in source.comments"
+                    :key="comment.id"
+                    class="rounded border border-default p-2"
+                  >
+                    <p class="text-xs text-muted">
+                      {{ comment.author || '匿名用户' }} · {{ comment.likes }} 赞
+                    </p>
+                    <p class="mt-1 whitespace-pre-wrap text-sm">{{ comment.text }}</p>
+                  </li>
+                </ol>
+              </div>
+              <p v-if="source.readError" class="mt-2 text-sm text-warning">
+                {{ source.readError }}
+              </p>
+              <UButton
+                v-if="source.contentKind !== 'pasted'"
+                :label="
+                  source.contentKind === 'visible-note' ? '重新读取正文和评论' : '读取正文和评论'
+                "
+                class="mt-2"
+                size="sm"
+                variant="outline"
+                :disabled="researchBusy || researchWebBusy || researchAdviceBusy || analysisBusy"
+                @click="readResearchNote(source)"
+              />
+            </article>
+          </section>
+
+          <details class="border-t border-default pt-4">
+            <summary class="cursor-pointer text-sm font-medium">
+              自动检索受限？粘贴笔记链接和内容
+            </summary>
+            <div class="mt-3 space-y-3">
+              <UInput v-model="pastedSourceTitle" class="w-full" placeholder="笔记标题（可选）" />
+              <UInput v-model="pastedSourceUrl" class="w-full" placeholder="小红书笔记链接" />
+              <UTextarea
+                v-model="pastedSourceText"
+                class="w-full"
+                :rows="5"
+                placeholder="粘贴笔记正文或摘要"
+              />
+              <UButton
+                label="导入链接并整理建议"
+                :disabled="researchBusy || researchAdviceBusy || analysisBusy"
+                icon="i-lucide-sparkles"
+                @click="summarizePastedSource"
+              />
+            </div>
+          </details>
         </div>
-        <div v-if="researchSummary" class="space-y-2">
-          <h4 class="text-sm font-semibold">基于检索内容的简历修改意见 · {{ researchRole }}</h4>
-          <div
-            data-testid="research-advice"
-            class="max-w-none rounded border border-default bg-elevated/30 p-4 font-sans text-sm leading-6 whitespace-pre-wrap wrap-anywhere"
-          >
-            {{ researchSummary }}
+        <div class="research-result-column">
+          <div class="advice-result space-y-3">
+            <h3 class="panel-title"><UIcon name="i-lucide-notebook-pen" />修改建议</h3>
+            <div class="space-y-2 border-y border-default py-3">
+              <p class="text-sm">
+                当前简历：{{
+                  selectedProfile?.name ||
+                  (selectedProfile ? '未命名简历' : '请先在简历档案中选择一份简历')
+                }}
+              </p>
+              <p class="text-sm text-muted">
+                检索只显示帖子卡片。点击单条帖子下方的“读取正文和评论”后，才会打开该帖子并读取正文和已加载评论中的前
+                5 条高赞评论。
+              </p>
+              <UButton
+                label="根据检索内容和简历生成修改意见"
+                data-testid="generate-research-advice"
+                icon="i-lucide-sparkles"
+                :loading="researchAdviceBusy"
+                :disabled="
+                  !selectedProfile ||
+                  !researchContentCount ||
+                  analysisBusy ||
+                  researchBusy ||
+                  researchWebBusy
+                "
+                @click="createResearchAdvice"
+              />
+              <p class="text-xs text-muted">
+                {{
+                  researchContentCount
+                    ? `已取得 ${researchContentCount} 条正文或摘要，将与当前简历一起提交给 AI。`
+                    : '尚无可用于分析的内容。请先检索，再手动读取帖子正文和评论，或在下方粘贴内容。'
+                }}
+              </p>
+            </div>
+            <div v-if="!researchAdviceStatus && !researchSummary" class="product-empty">
+              <UIcon name="i-lucide-text-cursor-input" class="size-7 text-muted" />
+              <p>让经验转化为具体修改</p>
+              <p class="text-xs text-muted">
+                先检索并读取来源，再点击生成修改意见。<br />结果会保存在建议记录中。
+              </p>
+            </div>
+            <div class="flex items-center gap-3">
+              <p v-if="researchAdviceStatus" role="status" class="text-sm text-muted">
+                {{ researchAdviceStatus }}
+              </p>
+              <UButton
+                v-if="researchAdviceBusy"
+                label="停止生成"
+                color="neutral"
+                variant="outline"
+                size="sm"
+                @click="stopResearchAdvice"
+              />
+            </div>
+            <div v-if="researchSummary" class="space-y-2">
+              <h4 class="text-sm font-semibold">基于检索内容的简历修改意见 · {{ researchRole }}</h4>
+              <div
+                data-testid="research-advice"
+                class="max-w-none rounded border border-default bg-elevated/30 p-4 font-sans text-sm leading-6 whitespace-pre-wrap wrap-anywhere"
+              >
+                {{ researchSummary }}
+              </div>
+            </div>
           </div>
+          <details v-if="selectedProfile" class="resume-peek">
+            <summary>查看当前简历内容</summary>
+            <p class="text-xs text-muted mt-2">
+              {{ selectedProfile.name }} · {{ selectedProfile.targetRoles.join('、') }}
+            </p>
+            <p class="whitespace-pre-wrap text-sm mt-2">{{ selectedProfile.selfIntroduction }}</p>
+            <div
+              v-for="item in [
+                ...selectedProfile.workExperience,
+                ...selectedProfile.internshipExperience,
+                ...selectedProfile.educationExperience,
+                ...selectedProfile.projects,
+              ]"
+              :key="item.id"
+              class="mt-3 text-sm"
+            >
+              <strong>{{ item.title }} · {{ item.organization }}</strong>
+              <p class="text-xs text-muted">{{ item.period }}</p>
+              <p class="whitespace-pre-wrap">{{ item.description }}</p>
+            </div>
+          </details>
+          <details v-if="selectedProfile" class="border-t border-default pt-4">
+            <summary class="cursor-pointer text-sm text-muted">
+              可选：仅分析简历（不使用检索内容）
+            </summary>
+            <div v-if="selectedProfile" class="space-y-2 border-y border-default py-3">
+              <div class="flex flex-wrap items-center justify-between gap-3">
+                <p class="text-sm">当前简历：{{ selectedProfile.name || '未命名简历' }}</p>
+                <UButton
+                  label="仅根据简历分析方向和修改点"
+                  icon="i-lucide-sparkles"
+                  :loading="analysisBusy"
+                  :disabled="researchAdviceBusy"
+                  @click="analyzeResume"
+                />
+              </div>
+              <div class="flex items-center gap-3">
+                <p v-if="analysisStatus" role="status" class="text-sm text-muted">
+                  {{ analysisStatus }}
+                </p>
+                <UButton
+                  v-if="analysisBusy"
+                  label="停止生成"
+                  color="neutral"
+                  variant="outline"
+                  size="sm"
+                  @click="stopAnalysis"
+                />
+              </div>
+              <pre
+                v-if="analysis"
+                data-testid="resume-analysis"
+                class="whitespace-pre-wrap text-sm"
+                >{{ analysis }}</pre>
+            </div>
+          </details>
         </div>
       </div>
-      <section v-if="researchSources.length" class="space-y-3 border-t border-default pt-4">
-        <h4 class="text-sm font-semibold">检索来源 · {{ researchRole }}</h4>
-        <p class="text-sm text-muted">
-          点击单条帖子下方的按钮读取正文和评论。评论按页面显示点赞数排序，取已加载内容中前 5
-          条；仅有标题的帖子不参与 AI 分析。
-        </p>
-        <article
-          v-for="source in researchSources"
-          :key="source.url"
-          class="border-b border-default pb-3"
-        >
-          <a
-            :href="source.url"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="font-medium text-primary"
-            >{{ source.title }}</a
-          >
-          <p class="mt-1 text-xs text-muted">
-            {{ sourceKindLabels[source.contentKind || 'search-snippet'] }}
-          </p>
-          <p v-if="source.author" class="mt-1 text-xs text-muted">{{ source.author }}</p>
-          <p class="mt-1 whitespace-pre-wrap text-sm text-muted">{{ source.excerpt }}</p>
-          <div v-if="source.commentCoverage" class="mt-3 space-y-2">
-            <h5 class="text-sm font-medium">
-              高赞评论 · 已加载评论中前 {{ source.comments?.length || 0 }} 条
-            </h5>
-            <p class="text-xs text-muted" data-testid="comment-coverage">
-              {{ source.commentCoverage.message }}
-            </p>
-            <ol v-if="source.comments?.length" class="space-y-2" data-testid="source-comments">
-              <li
-                v-for="comment in source.comments"
-                :key="comment.id"
-                class="rounded border border-default p-2"
-              >
-                <p class="text-xs text-muted">
-                  {{ comment.author || '匿名用户' }} · {{ comment.likes }} 赞
-                </p>
-                <p class="mt-1 whitespace-pre-wrap text-sm">{{ comment.text }}</p>
-              </li>
-            </ol>
-          </div>
-          <p v-if="source.readError" class="mt-2 text-sm text-warning">{{ source.readError }}</p>
-          <UButton
-            v-if="source.contentKind !== 'pasted'"
-            :label="source.contentKind === 'visible-note' ? '重新读取正文和评论' : '读取正文和评论'"
-            class="mt-2"
-            size="sm"
-            variant="outline"
-            :disabled="researchBusy || researchWebBusy || researchAdviceBusy || analysisBusy"
-            @click="readResearchNote(source)"
-          />
-        </article>
-      </section>
-
-      <details class="border-t border-default pt-4">
-        <summary class="cursor-pointer text-sm font-medium">
-          自动检索受限？粘贴笔记链接和内容
-        </summary>
-        <div class="mt-3 space-y-3">
-          <UInput v-model="pastedSourceTitle" class="w-full" placeholder="笔记标题（可选）" />
-          <UInput v-model="pastedSourceUrl" class="w-full" placeholder="小红书笔记链接" />
-          <UTextarea
-            v-model="pastedSourceText"
-            class="w-full"
-            :rows="5"
-            placeholder="粘贴笔记正文或摘要"
-          />
-          <UButton
-            label="导入链接并整理建议"
-            :disabled="researchBusy || researchAdviceBusy || analysisBusy"
-            icon="i-lucide-sparkles"
-            @click="summarizePastedSource"
-          />
-        </div>
-      </details>
-      <details v-if="selectedProfile" class="border-t border-default pt-4">
-        <summary class="cursor-pointer text-sm text-muted">
-          可选：仅分析简历（不使用检索内容）
-        </summary>
-        <div v-if="selectedProfile" class="space-y-2 border-y border-default py-3">
-          <div class="flex flex-wrap items-center justify-between gap-3">
-            <p class="text-sm">当前简历：{{ selectedProfile.name || '未命名简历' }}</p>
-            <UButton
-              label="仅根据简历分析方向和修改点"
-              icon="i-lucide-sparkles"
-              :loading="analysisBusy"
-              :disabled="researchAdviceBusy"
-              @click="analyzeResume"
-            />
-          </div>
-          <div class="flex items-center gap-3">
-            <p v-if="analysisStatus" role="status" class="text-sm text-muted">
-              {{ analysisStatus }}
-            </p>
-            <UButton
-              v-if="analysisBusy"
-              label="停止生成"
-              color="neutral"
-              variant="outline"
-              size="sm"
-              @click="stopAnalysis"
-            />
-          </div>
-          <pre v-if="analysis" data-testid="resume-analysis" class="whitespace-pre-wrap text-sm">{{
-            analysis
-          }}</pre>
-        </div>
-      </details>
     </section>
 
-    <section v-else-if="view === 'interview'" class="max-w-3xl space-y-5">
-      <p v-if="interviewFlow.state.error" role="alert" class="rounded border border-error p-3 text-sm text-error">{{ interviewFlow.state.error }}</p>
-      <p v-if="interviewFlow.state.status" role="status" class="text-sm text-muted">{{ interviewFlow.state.status }}</p>
-      <UButton v-if="interviewFlow.state.generating" label="停止生成" color="neutral" variant="outline" @click="interviewFlow.stop()" />
+    <section v-else-if="view === 'interview'" class="interview-layout space-y-5">
+      <OperationError :message="interviewFlow.state.error || ''" />
+      <p v-if="interviewFlow.state.status" role="status" class="text-sm text-muted">
+        {{ interviewFlow.state.status }}
+      </p>
+      <UButton
+        v-if="interviewFlow.state.generating"
+        label="停止生成"
+        color="neutral"
+        variant="outline"
+        @click="interviewFlow.stop()"
+      />
       <div v-if="!currentSession" class="space-y-4">
         <div>
           <h3 class="text-base font-semibold">文字模拟面试</h3>
@@ -1392,15 +1567,12 @@ onBeforeUnmount(() => {
               {{ currentSession.company }}
             </p>
           </div>
-          <UButton label="保存并退出练习" color="neutral" variant="outline" @click="closeInterview" />
-        </div>
-        <div
-          v-for="(entry, index) in currentSession.answers"
-          :key="index"
-          class="space-y-2 border-b border-default pb-3"
-        >
-          <p class="text-sm font-medium">{{ index + 1 }}. {{ entry.question }}</p>
-          <p class="whitespace-pre-wrap text-sm text-muted">{{ entry.answer }}</p>
+          <UButton
+            label="保存并退出练习"
+            color="neutral"
+            variant="outline"
+            @click="closeInterview"
+          />
         </div>
         <div v-if="currentQuestion" class="space-y-3">
           <h4 class="text-sm font-semibold">
@@ -1450,6 +1622,17 @@ onBeforeUnmount(() => {
             @click="finishInterview"
           />
         </div>
+        <details v-if="currentSession.answers.length" class="interview-transcript">
+          <summary>历史问答 · {{ currentSession.answers.length }} 题</summary>
+          <div
+            v-for="(entry, index) in currentSession.answers"
+            :key="index"
+            class="space-y-2 border-b border-default pb-3"
+          >
+            <p class="text-sm font-medium">{{ index + 1 }}. {{ entry.question }}</p>
+            <p class="whitespace-pre-wrap text-sm text-muted">{{ entry.answer }}</p>
+          </div>
+        </details>
       </div>
     </section>
 
@@ -1469,7 +1652,8 @@ onBeforeUnmount(() => {
           >
           <span class="block text-xs text-muted"
             >{{ new Date(session.updatedAt).toLocaleString() }} ·
-            {{ session.answers.length }} 道问答 · {{ session.review ? '已完成' : '进行中，可继续' }}</span
+            {{ session.answers.length }} 道问答 ·
+            {{ session.review ? '已完成' : '进行中，可继续' }}</span
           >
           <span class="mt-1 block whitespace-pre-wrap text-sm text-muted">{{
             session.review || '尚未生成复盘'
@@ -1486,32 +1670,81 @@ onBeforeUnmount(() => {
     </section>
     <section v-else class="space-y-4" aria-label="本地建议记录">
       <h3 class="text-base font-semibold">建议记录</h3>
-      <p class="text-sm text-muted">保存生成时的简历、目标岗位和来源。旧建议仅对应当时的简历版本，不会自动覆盖当前简历。</p>
-      <p v-if="!adviceRecords.length" class="text-sm text-muted">还没有建议记录。生成分析或修改意见后会保存在这里。</p>
-      <article v-for="record in adviceRecords" :key="record.id" class="space-y-3 rounded border border-default p-4" data-testid="advice-record">
+      <p class="text-sm text-muted">
+        保存生成时的简历、目标岗位和来源。旧建议仅对应当时的简历版本，不会自动覆盖当前简历。
+      </p>
+      <p v-if="!adviceRecords.length" class="text-sm text-muted">
+        还没有建议记录。生成分析或修改意见后会保存在这里。
+      </p>
+      <article
+        v-for="record in adviceRecords"
+        :key="record.id"
+        class="space-y-3 rounded border border-default p-4"
+        data-testid="advice-record"
+      >
         <div class="flex flex-wrap items-center justify-between gap-2">
           <div>
-            <h4 class="font-medium">{{ record.profileSnapshot.name || '未命名简历' }} · {{ record.role || '求职方向分析' }}</h4>
-            <p class="text-xs text-muted">{{ new Date(record.createdAt).toLocaleString() }} · {{ record.kind === 'research' ? '来源修改建议' : '简历分析' }} · {{ record.status === 'partial' ? '部分生成内容' : '生成完成' }} · {{ record.model }}</p>
+            <h4 class="font-medium">
+              {{ record.profileSnapshot.name || '未命名简历' }} ·
+              {{ record.role || '求职方向分析' }}
+            </h4>
+            <p class="text-xs text-muted">
+              {{ new Date(record.createdAt).toLocaleString() }} ·
+              {{ record.kind === 'research' ? '来源修改建议' : '简历分析' }} ·
+              {{ record.status === 'partial' ? '部分生成内容' : '生成完成' }} · {{ record.model }}
+            </p>
           </div>
           <div class="flex gap-2">
-            <UButton :label="record.done ? '已处理，标回待处理' : '标记已处理'" size="sm" color="neutral" variant="outline" @click="toggleAdvice(record)" />
-            <UButton label="删除记录" size="sm" color="error" variant="ghost" @click="removeAdvice(record)" />
+            <UButton
+              :label="record.done ? '已处理，标回待处理' : '标记已处理'"
+              size="sm"
+              color="neutral"
+              variant="outline"
+              @click="toggleAdvice(record)"
+            />
+            <UButton
+              label="删除记录"
+              size="sm"
+              color="error"
+              variant="ghost"
+              @click="removeAdvice(record)"
+            />
           </div>
         </div>
         <pre class="whitespace-pre-wrap text-sm">{{ record.text }}</pre>
         <details>
           <summary class="cursor-pointer text-sm">查看分析时的简历快照</summary>
-          <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">{{ JSON.stringify(record.profileSnapshot, null, 2) }}</pre>
+          <pre class="mt-2 max-h-64 overflow-auto whitespace-pre-wrap text-xs">{{
+            JSON.stringify(record.profileSnapshot, null, 2)
+          }}</pre>
         </details>
         <details v-if="record.sources.length">
-          <summary class="cursor-pointer text-sm">核对 {{ record.sources.length }} 条来源和读取范围</summary>
-          <div v-for="source in record.sources" :key="source.url" class="mt-3 space-y-1 border-t border-default pt-2 text-sm">
-            <a :href="source.url" target="_blank" rel="noopener noreferrer" class="text-primary underline">{{ source.title }}</a>
-            <p class="text-xs text-muted">{{ source.author || '作者未识别' }} · {{ sourceKindLabels[source.contentKind || ''] || '导入内容' }}</p>
+          <summary class="cursor-pointer text-sm">
+            核对 {{ record.sources.length }} 条来源和读取范围
+          </summary>
+          <div
+            v-for="source in record.sources"
+            :key="source.url"
+            class="mt-3 space-y-1 border-t border-default pt-2 text-sm"
+          >
+            <a
+              :href="source.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-primary underline"
+              >{{ source.title }}</a
+            >
+            <p class="text-xs text-muted">
+              {{ source.author || '作者未识别' }} ·
+              {{ sourceKindLabels[source.contentKind || ''] || '导入内容' }}
+            </p>
             <p class="whitespace-pre-wrap">{{ source.excerpt }}</p>
-            <p v-if="source.commentCoverage" class="text-xs text-muted">{{ source.commentCoverage.message }}</p>
-            <p v-for="comment in source.comments || []" :key="comment.id" class="text-xs">{{ comment.author }} · {{ comment.likesText }} 赞：{{ comment.text }}</p>
+            <p v-if="source.commentCoverage" class="text-xs text-muted">
+              {{ source.commentCoverage.message }}
+            </p>
+            <p v-for="comment in source.comments || []" :key="comment.id" class="text-xs">
+              {{ comment.author }} · {{ comment.likesText }} 赞：{{ comment.text }}
+            </p>
           </div>
         </details>
       </article>

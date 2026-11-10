@@ -2,6 +2,7 @@ import { createAnthropic } from '@ai-sdk/anthropic'
 import { createOpenAI } from '@ai-sdk/openai'
 
 import { createAdvancedFetch } from '@/utils/modelRequest'
+import { createResponsesCompatibleFetch } from '@/utils/responsesTransport'
 
 import type { ModelConfData } from './type'
 
@@ -14,7 +15,11 @@ export function createModel(conf: ModelConfData, transport?: typeof fetch) {
   if (conf.protocol === 'anthropic-messages') {
     return createAnthropic(settings)(conf.model)
   }
-  const provider = createOpenAI(settings)
+  const provider = createOpenAI(
+    conf.protocol === 'openai-responses'
+      ? { ...settings, fetch: createResponsesCompatibleFetch(settings.fetch) }
+      : settings,
+  )
   return conf.protocol === 'openai-responses'
     ? provider.responses(conf.model)
     : provider.chat(conf.model)

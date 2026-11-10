@@ -1,5 +1,6 @@
 @import 'tailwindcss';
 @import '@nuxt/ui';
+@import './product.css';
 @plugin "@tailwindcss/typography";
 
 body {
@@ -154,7 +155,7 @@ html[dark] {
   .card-salary {
     font-size: 1.1rem;
     margin: 0 0 1rem;
-    color: #ff442e;
+    color: var(--ui-primary, #ff442e);
   }
   .card-footer {
     -webkit-margin-before: auto;
@@ -251,7 +252,7 @@ html[dark] {
       color: #b4b4b4;
     }
     .card-salary {
-      color: #ff442e;
+      color: var(--ui-primary, #ff442e);
     }
     .author-row {
       color: #a09f9f;
