@@ -10,7 +10,6 @@ import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
 import Filter from '@/components/Tabs/Filter.vue'
 import Logs from '@/components/Tabs/Logs.vue'
 import Statistics from '@/components/Tabs/Statistics.vue'
-import Version from '@/components/Version.vue'
 import { useConf, appearanceConf } from '@/composables/conf'
 import { useAccounts } from '@/composables/useAccounts'
 import { useModel } from '@/composables/useModel'
@@ -18,7 +17,7 @@ import { counter } from '@/message'
 import { logger } from '@/utils/logger'
 import { registerToastSink } from '@/utils/toast'
 
-import { useHelper, VITE_VERSION } from './composables/useHelper'
+import { useHelper } from './composables/useHelper'
 import { get_system_version } from './utils'
 
 const model = useModel()
@@ -153,19 +152,6 @@ function feedback() {
   }
 }
 
-const isDot = computed(() => {
-  return (helper.netConf.value?.version ?? '0') > VITE_VERSION
-})
-
-const overlay = useOverlay()
-
-function openStore() {
-  overlay
-    .create(Version, {
-      destroyOnClose: true,
-    })
-    .open()
-}
 </script>
 
 <template>
@@ -191,11 +177,6 @@ function openStore() {
             <div class="flex items-center gap-2">
               <UIcon name="i-lucide-briefcase-business" class="text-primary size-5" />
               <h1 class="font-semibold text-base">BossHelper</h1>
-              <UChip :show="isDot"
-                ><UButton color="neutral" variant="ghost" size="xs" @click="openStore"
-                  >v{{ VITE_VERSION }}{{ isDot ? ' · 有更新' : '' }}</UButton
-                ></UChip
-              >
             </div>
             <div class="delivery-account-row">
               <span class="text-xs text-muted">{{

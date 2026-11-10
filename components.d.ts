@@ -53,7 +53,6 @@ declare module 'vue' {
     UTable: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Table.vue')['default']
     UTabs: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Tabs.vue')['default']
     UTextarea: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Textarea.vue')['default']
-    Version: typeof import('./src/components/Version.vue')['default']
   }
 }
 
@@ -100,5 +99,4 @@ declare global {
   const UTable: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Table.vue')['default']
   const UTabs: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Tabs.vue')['default']
   const UTextarea: typeof import('./node_modules/@nuxt/ui/dist/runtime/components/Textarea.vue')['default']
-  const Version: typeof import('./src/components/Version.vue')['default']
 }
