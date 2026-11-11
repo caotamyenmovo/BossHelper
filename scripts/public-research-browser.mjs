@@ -99,9 +99,16 @@ try {
   await page.click('button[aria-label="求职工作台"]')
   await click('简历建议')
   await page.type('[data-testid="research-role"]', '安全工程师')
-  await click('检索公开内容')
+  assert(
+    await page.$$eval('.research-toolbar button', (buttons) =>
+      buttons.some((b) => b.textContent?.trim() === '打开小红书搜索' && b.getClientRects().length),
+    ),
+  )
+  assert.equal(await page.$eval('[data-testid="research-fallback"]', (el) => el.open), false)
+  await page.click('[data-testid="research-fallback"] summary')
+  await click('公开索引检索')
   await waitText('公开搜索返回了其他网站或非笔记页面')
-  await click('小红书网页检索')
+  await click('改用小红书网页搜索')
   const xhsTarget = await browser.waitForTarget(
     (target) =>
       target.type() === 'page' &&
@@ -179,7 +186,7 @@ try {
   })
   assert(!(await page.$('a[href*="xsec_token=fixture"]')))
   scenario = 'blocked'
-  await click('小红书网页检索')
+  await click('打开小红书搜索')
   await page.bringToFront()
   await waitText('小红书页面显示安全限制或网络风险')
   assert.equal(errors.length, 0, errors.join('\n'))

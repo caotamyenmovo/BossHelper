@@ -12,6 +12,8 @@ export interface XiaohongshuResearchTask {
   token: string
   tabId: number
   role: string
+  query?: string
+  pageStatus?: XiaohongshuPageResult['status']
   createdAt: number
   expiresAt: number
   status: 'pending' | 'ready' | 'error'
@@ -23,9 +25,9 @@ export interface XiaohongshuResearchTask {
   total?: number
   overallExpiresAt?: number
 }
-export function buildXiaohongshuSearchUrl(role: string) {
+export function buildXiaohongshuSearchUrl(role: string, query = `${role.trim()} 简历`) {
   const url = new URL('https://www.xiaohongshu.com/search_result')
-  url.searchParams.set('keyword', `${role.trim()} 简历`)
+  url.searchParams.set('keyword', query)
   url.searchParams.set('source', 'web_search_result_notes')
   return url.toString()
 }
@@ -45,7 +47,8 @@ const stopLoading = (sources: PublicCareerSource[]) =>
       : source,
   )
 
-type Api = Pick<typeof import('#imports').browser, 'tabs' | 'storage'> & Partial<Pick<typeof import('#imports').browser, 'permissions'>>
+type Api = Pick<typeof import('#imports').browser, 'tabs' | 'storage'> &
+  Partial<Pick<typeof import('#imports').browser, 'permissions'>>
 export function createXiaohongshuResearch(api: Api, now = Date.now) {
   let queue = Promise.resolve<unknown>(undefined)
   function serial<T>(fn: () => Promise<T>): Promise<T> {
@@ -68,16 +71,31 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
     if ((await stored())?.token !== task.token) return stored()
     return save(task)
   }
-  async function begin(role: string, sources?: PublicCareerSource[], urls?: string[]) {
+  async function begin(
+    role: string,
+    sources?: PublicCareerSource[],
+    urls?: string[],
+    query?: string,
+    reuseTabId?: number,
+  ) {
     if (!role.trim()) throw new Error('请先填写目标岗位。')
-    if (api.permissions && !(await api.permissions.contains({ origins: ['https://www.xiaohongshu.com/*'] })))
-      throw new Error('缺少小红书网站访问权限。请在扩展管理 → BossHelper → 网站访问权限中允许 https://www.xiaohongshu.com/*，刷新小红书页面后重试；也可粘贴正文作为来源。')
-    const tab = await api.tabs.create({ url: 'about:blank', active: true })
+    if (
+      api.permissions &&
+      !(await api.permissions.contains({ origins: ['https://www.xiaohongshu.com/*'] }))
+    )
+      throw new Error(
+        '缺少小红书网站访问权限。请在扩展管理 → BossHelper → 网站访问权限中允许 https://www.xiaohongshu.com/*，刷新小红书页面后重试；也可粘贴正文作为来源。',
+      )
+    const tab =
+      reuseTabId === undefined
+        ? await api.tabs.create({ url: 'about:blank', active: true })
+        : await api.tabs.get(reuseTabId)
     if (tab.id === undefined) throw new Error('无法打开小红书页面。')
     const task = await save({
       token: crypto.randomUUID(),
       tabId: tab.id,
       role: role.trim(),
+      query,
       createdAt: now(),
       expiresAt: now() + XHS_RESEARCH_TIMEOUT,
       overallExpiresAt: now() + 10 * 60_000,
@@ -92,7 +110,7 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
         : '已打开小红书搜索页；如需登录，请在该页面完成登录。搜索结果出现后，手动点击帖子下方的“读取正文和评论”。',
     })
     try {
-      await api.tabs.update(tab.id, { url: task.noteUrl ?? buildXiaohongshuSearchUrl(role) })
+      await api.tabs.update(tab.id, { url: task.noteUrl ?? buildXiaohongshuSearchUrl(role, query) })
     } catch (cause) {
       await update({ ...task, status: 'error', message: '无法打开小红书页面，请重试。' })
       throw cause
@@ -112,12 +130,18 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
     })
   }
   return {
-    start: (role: string) => serial(() => begin(role)),
-    readNote: (role: string, source: PublicCareerSource, sources: PublicCareerSource[]) =>
+    start: (role: string, query?: string, sources?: PublicCareerSource[], reuseTabId?: number) =>
+      serial(() => begin(role, sources, undefined, query, reuseTabId)),
+    readNote: (
+      role: string,
+      source: PublicCareerSource,
+      sources: PublicCareerSource[],
+      reuseTabId?: number,
+    ) =>
       serial(() => {
         const url = normalizeXiaohongshuNoteUrl(source.url)
         if (!url) throw new Error('请选择有效的小红书帖子。')
-        return begin(role, sources, [url])
+        return begin(role, sources, [url], undefined, reuseTabId)
       }),
     cancel: (preserve = false) =>
       serial(async () => {
@@ -179,8 +203,16 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
           })
         }
         if (tab.status === 'loading') return task
-        if (api.permissions && !(await api.permissions.contains({ origins: ['https://www.xiaohongshu.com/*'] })))
-          return update({ ...task, status: 'error', message: '小红书网站访问权限未授权或已撤销。请到扩展管理允许小红书网站访问，刷新页面后重试；已取得内容会保留。' })
+        if (
+          api.permissions &&
+          !(await api.permissions.contains({ origins: ['https://www.xiaohongshu.com/*'] }))
+        )
+          return update({
+            ...task,
+            status: 'error',
+            message:
+              '小红书网站访问权限未授权或已撤销。请到扩展管理允许小红书网站访问，刷新页面后重试；已取得内容会保留。',
+          })
         if (tab.url) {
           const url = new URL(tab.url)
           if (
@@ -198,7 +230,7 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
             !task.noteUrl &&
             url.pathname === '/search_result' &&
             keyword &&
-            keyword !== `${task.role} 简历`
+            keyword !== (task.query ?? `${task.role} 简历`)
           )
             return update({
               ...task,
@@ -248,7 +280,9 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
           )
           if (!note) return { ...task, message: '正在等待所选帖子的正文加载…' }
           const sources = task.sources.map((source) =>
-            sameNote(source.url, task.noteUrl!) || sameNote(source.url, note.url) ? note : source,
+            sameNote(source.url, task.noteUrl!) || sameNote(source.url, note.url)
+              ? { ...source, ...note, readError: undefined }
+              : source,
           )
           if (note.commentCoverage?.status === 'loading')
             return update({
@@ -265,8 +299,11 @@ export function createXiaohongshuResearch(api: Api, now = Date.now) {
             sources: stopLoading(task.sources),
             message: page.message,
           })
-        if (page.status === 'empty') return failure(page.message)
-        return { ...task, message: page.message }
+        if (page.status === 'empty')
+          return task.noteUrl
+            ? failure(page.message)
+            : update({ ...task, status: 'ready', sources: [], message: page.message })
+        return { ...task, message: page.message, pageStatus: page.status }
       }),
   }
 }

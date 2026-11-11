@@ -15,6 +15,45 @@ function text(element: Element | null) {
     ? (element as HTMLElement).innerText?.trim() || element.textContent?.trim() || ''
     : ''
 }
+function count(element: Element | null): number | null {
+  const raw = text(element).replace(/[,，\s]/g, '')
+  const match = raw.match(/^(\d+(?:\.\d+)?)(万|千|[wk])?\+?$/i)
+  if (!match) return null
+  const unit = match[2]?.toLowerCase()
+  return Math.round(
+    Number(match[1]) *
+      (unit === '万' || unit === 'w' ? 10000 : unit === '千' || unit === 'k' ? 1000 : 1),
+  )
+}
+function popularity(scope: Element) {
+  const own = (selector: string) =>
+    [...scope.querySelectorAll(selector)].find(
+      (node) =>
+        visible(node) &&
+        !node.closest(
+          '.comments-container, .comments-el, .comment-list, .comment-item, .comment-inner, [data-comment-id]',
+        ),
+    ) ?? null
+  return {
+    likes: count(own('.like-wrapper .count, .like-container .count, [data-note-likes]')),
+    collects: count(
+      own('.collect-wrapper .count, .collect-container .count, [data-note-collects]'),
+    ),
+  }
+}
+export function isNoteImageUrl(value: string) {
+  try {
+    const url = new URL(value)
+    return (
+      url.protocol === 'https:' &&
+      !url.username &&
+      !url.password &&
+      (url.hostname === 'xhscdn.com' || url.hostname.endsWith('.xhscdn.com'))
+    )
+  } catch {
+    return false
+  }
+}
 export function readXiaohongshuPage(doc: Document, pageUrl: string): XiaohongshuPageResult {
   const empty = (
     status: XiaohongshuPageResult['status'],
@@ -47,7 +86,18 @@ export function readXiaohongshuPage(doc: Document, pageUrl: string): Xiaohongshu
   if (detail && currentNoteUrl) {
     const title = text(detail.querySelector('#detail-title, .title'))
     const body = text(detail.querySelector('#detail-desc, .desc, .note-text'))
-    if (body)
+    const images = [
+      ...new Set(
+        [
+          ...detail.querySelectorAll<HTMLImageElement>(
+            '.swiper-slide img, .note-slider img, [data-note-image]',
+          ),
+        ]
+          .map((img) => img.currentSrc || img.src)
+          .filter(isNoteImageUrl),
+      ),
+    ]
+    if (body || images.length)
       return {
         status: 'ready',
         message: '',
@@ -65,6 +115,11 @@ export function readXiaohongshuPage(doc: Document, pageUrl: string): Xiaohongshu
             url: currentNoteUrl,
             excerpt: body.slice(0, 12000),
             contentKind: 'visible-note',
+            ...popularity(detail),
+            images: images.slice(0, 12),
+            imageStatus: images.length
+              ? `发现 ${images.length} 张图片，尚未识别；首轮最多识别 3 张。`
+              : undefined,
           },
         ],
       }
@@ -94,6 +149,7 @@ export function readXiaohongshuPage(doc: Document, pageUrl: string): Xiaohongshu
       url,
       excerpt: title,
       contentKind: 'visible-card',
+      ...popularity(card),
     })
     if (sources.length >= 12) break
   }

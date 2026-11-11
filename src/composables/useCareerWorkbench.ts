@@ -48,6 +48,7 @@ export interface CareerStorage {
 }
 
 export interface CareerAdviceRecord {
+  jobDescription?: string
   id: string
   revision?: number
   kind: 'analysis' | 'research'

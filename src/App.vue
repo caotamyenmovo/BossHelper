@@ -1,18 +1,18 @@
 <script lang="ts" setup>
 import type { TabsItem } from '@nuxt/ui'
-import { computed, onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
 import ChatBox from '@/components/ChatBox.vue'
 import DeliveryControls from '@/components/DeliveryControls.vue'
 import JobCards from '@/components/JobCards.vue'
-import About from '@/components/Tabs/About.vue'
 import Appearance from '@/components/Tabs/ConfigItem/Appearance.vue'
 import Filter from '@/components/Tabs/Filter.vue'
 import Logs from '@/components/Tabs/Logs.vue'
 import Statistics from '@/components/Tabs/Statistics.vue'
-import { useConf, appearanceConf } from '@/composables/conf'
+import { useConf, appearanceConf, appearanceOffset } from '@/composables/conf'
 import { useAccounts } from '@/composables/useAccounts'
 import { useModel } from '@/composables/useModel'
+import { usePageAppearance } from '@/composables/usePageAppearance'
 import { counter } from '@/message'
 import { logger } from '@/utils/logger'
 import { registerToastSink } from '@/utils/toast'
@@ -23,7 +23,7 @@ import { get_system_version } from './utils'
 const model = useModel()
 
 const helper = useHelper()
-const { todayData } = helper.statistics
+usePageAppearance()
 const conf = useConf()
 const accounts = useAccounts()
 const switchingAccount = ref(false)
@@ -94,11 +94,6 @@ const items = computed<TabsItem[]>(() => {
     { slot: 'appearance', value: 'appearance', label: '外观' },
 
     { slot: 'logs', value: 'logs', label: '日志' },
-    {
-      slot: 'about',
-      value: 'about',
-      label: '关于&赞赏',
-    },
   ] satisfies (TabsItem | boolean | null | undefined | '')[]
 
   return configs.filter((item) => !!item) as TabsItem[]
@@ -107,6 +102,13 @@ const items = computed<TabsItem[]>(() => {
 // const externalFilter = ref<HTMLElement>()
 const container = ref<HTMLElement>()
 const chatOpen = ref(appearanceConf.value.defaultShowChatBox)
+watch(
+  () => appearanceConf.value.defaultShowChatBox,
+  (open) => {
+    chatOpen.value = open
+  },
+  { immediate: true },
+)
 
 async function refreshConfiguration() {
   if (helper.workflowRunning.value || switchingAccount.value) return
@@ -119,7 +121,6 @@ onUnmounted(() => window.removeEventListener('focus', refreshConfiguration))
 onMounted(async () => {
   window.addEventListener('focus', refreshConfiguration)
   void refreshConfiguration()
-  chatOpen.value = appearanceConf.value.defaultShowChatBox
 
   logger.info('BossHelper挂载成功')
   toast.add({
@@ -151,7 +152,6 @@ function feedback() {
     toast.add({ title: '暂无反馈地址', color: 'error' })
   }
 }
-
 </script>
 
 <template>
@@ -159,13 +159,15 @@ function feedback() {
     class="shadow-wrapper product-theme delivery-shell mx-auto mb-24"
     :style="{
       width: `${appearanceConf.contentWidth}px`,
+      '--boss-chat-width': `${appearanceConf.chatBoxWidth}px`,
+      marginBottom: appearanceConf.listSink ? '300px' : undefined,
       marginRight:
-        appearanceConf.leftChat && appearanceConf.contentOffset != 25
-          ? `${appearanceConf.contentOffset}%`
+        appearanceConf.leftChat && appearanceOffset !== undefined
+          ? `${appearanceOffset}%`
           : undefined,
       marginLeft:
-        !appearanceConf.leftChat && appearanceConf.contentOffset != 25
-          ? `${appearanceConf.contentOffset}%`
+        !appearanceConf.leftChat && appearanceOffset !== undefined
+          ? `${appearanceOffset}%`
           : undefined,
     }"
     ref="container"
@@ -228,10 +230,7 @@ function feedback() {
               />
             </div>
           </div>
-          <DeliveryControls
-            :disabled="switchingAccount"
-            @logs="showFailures"
-          />
+          <DeliveryControls :disabled="switchingAccount" @logs="showFailures" />
         </div>
         <div class="delivery-sections">
           <div v-if="helper.netConf.value && helper.netConf.value.notification" class="netAlerts">
@@ -265,7 +264,6 @@ function feedback() {
 
             <template #appearance><Appearance /></template>
             <template #logs><Logs /></template>
-            <template #about><About /></template>
             <template #list-trailing
               ><UButton
                 v-if="helper.netConf.value?.feedback"

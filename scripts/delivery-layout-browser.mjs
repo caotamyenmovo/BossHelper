@@ -5,6 +5,8 @@ import { join, resolve } from 'node:path'
 
 import puppeteer from 'puppeteer'
 
+import { verifyAppearance } from './appearance-browser-checks.mjs'
+
 const temporary = await mkdtemp(join(tmpdir(), 'boss-delivery-layout-'))
 const shots = resolve('.scratch/ui-unification/screenshots')
 await mkdir(shots, { recursive: true })
@@ -145,6 +147,110 @@ try {
       !document.querySelector('boss-helper-job').shadowRoot.querySelector('[data-slot="toast"]'),
   )
   await page.screenshot({ path: join(shots, 'delivery-light.png'), fullPage: true })
+  await click('状态过滤')
+  await page.waitForFunction(
+    () =>
+      document
+        .querySelector('boss-helper-job')
+        .shadowRoot.querySelector('[role=menu][data-state=open]')?.dataset.side,
+  )
+  assert.equal(
+    await page.evaluate(
+      () =>
+        document
+          .querySelector('boss-helper-job')
+          .shadowRoot.querySelector('[role=menu][data-state=open]').dataset.side,
+    ),
+    'bottom',
+    'Status menu must open below its trigger with the normal categories',
+  )
+  await page.screenshot({ path: join(shots, 'status-menu-normal.png'), fullPage: true })
+  await page.keyboard.press('Escape')
+  await page.waitForFunction(
+    () => !document.querySelector('boss-helper-job').shadowRoot.querySelector('[role=menu]'),
+  )
+  // Exercise the real menu with enough task categories to require scrolling.
+  await page.evaluate(() => {
+    window.fixturePipeline = window.fixtureHelper.workflow.pipeline.value
+    window.fixtureHelper.workflow.pipeline.value = Array.from({ length: 24 }, (_, i) => ({
+      id: 'menu-fixture-' + i,
+      label: '筛选条件 ' + i,
+    }))
+  })
+  for (const [width, height, view] of [
+    [1440, 1050, '卡片'],
+    [700, 950, '表格'],
+    [390, 844, '卡片'],
+  ]) {
+    await page.setViewport({ width, height })
+    await click(view)
+    await click('状态过滤')
+    await page.waitForFunction(() => {
+      const root = document.querySelector('boss-helper-job').shadowRoot
+      return [
+        ...root.querySelectorAll('[role=menu]'),
+        ...document.querySelectorAll('[role=menu]'),
+      ].some((el) => el.getClientRects().length && el.dataset.state === 'open')
+    })
+    const geometry = await page.evaluate(() => {
+      const root = document.querySelector('boss-helper-job').shadowRoot
+      const trigger = [...root.querySelectorAll('button')].find(
+        (b) => b.textContent.trim() === '状态过滤' && b.getClientRects().length,
+      )
+      const menu = [
+        ...root.querySelectorAll('[role=menu]'),
+        ...document.querySelectorAll('[role=menu]'),
+      ].find((el) => el.getClientRects().length && el.dataset.state === 'open')
+      const viewport = menu.querySelector('[data-slot=viewport]')
+      viewport.scrollTop = viewport.scrollHeight
+      return {
+        side: menu.dataset.side,
+        top: menu.getBoundingClientRect().top,
+        triggerBottom: trigger.getBoundingClientRect().bottom,
+        bottom: menu.getBoundingClientRect().bottom,
+        height: innerHeight,
+        scrollable: viewport.scrollHeight > viewport.clientHeight,
+        scrolled: viewport.scrollTop > 0,
+      }
+    })
+    assert.equal(geometry.side, 'bottom', 'Status menu must open below its trigger')
+    assert(geometry.top >= geometry.triggerBottom - 1, 'Menu must not cover the toolbar above')
+    assert(geometry.bottom <= geometry.height - 7, 'Menu must fit the viewport')
+    assert(geometry.scrollable && geometry.scrolled, 'Long menus must scroll internally')
+    const lastItem = await page.evaluateHandle(() => {
+      const items = document
+        .querySelector('boss-helper-job')
+        .shadowRoot.querySelectorAll('[role=menu][data-state=open] [role=menuitemcheckbox]')
+      return items[items.length - 1]
+    })
+    await lastItem.asElement().click()
+    await lastItem.dispose()
+    await page.waitForFunction(() => {
+      const root = document.querySelector('boss-helper-job').shadowRoot
+      const menu = [
+        ...root.querySelectorAll('[role=menu]'),
+        ...document.querySelectorAll('[role=menu]'),
+      ].find((el) => el.dataset.state === 'open')
+      const items = menu?.querySelectorAll('[role=menuitemcheckbox]')
+      return items?.[items.length - 1]?.getAttribute('aria-checked') === 'false'
+    })
+    await page.screenshot({ path: join(shots, `status-menu-${width}.png`), fullPage: true })
+    await page.evaluate(() => {
+      const menu = document
+        .querySelector('boss-helper-job')
+        .shadowRoot.querySelector('[role=menu][data-state=open]')
+      const items = menu.querySelectorAll('[role=menuitemcheckbox]')
+      items[items.length - 1].click()
+    })
+    await page.keyboard.press('Escape')
+    await page.waitForFunction(
+      () => !document.querySelector('boss-helper-job').shadowRoot.querySelector('[role=menu]'),
+    )
+  }
+  await page.evaluate(() => {
+    window.fixtureHelper.workflow.pipeline.value = window.fixturePipeline
+  })
+  await page.setViewport({ width: 1440, height: 1050 })
   async function assertGrid() {
     const geometry = await page.evaluate(() => {
       const root = document.querySelector('boss-helper-job').shadowRoot
@@ -163,7 +269,9 @@ try {
     assert(geometry.shellOverflow <= 1, 'Panel must not overflow horizontally')
   }
   await assertGrid()
-  const firstCard = await page.evaluateHandle(() => document.querySelector('boss-helper-job').shadowRoot.querySelector('.job-card'))
+  const firstCard = await page.evaluateHandle(() =>
+    document.querySelector('boss-helper-job').shadowRoot.querySelector('.job-card'),
+  )
   const resting = await firstCard.asElement().boundingBox()
   await page.mouse.move(resting.x + 80, resting.y + 90)
   await page.waitForFunction(() => {
@@ -175,25 +283,47 @@ try {
   assert(lifted.y < resting.y - 5, 'Original-style hover should lift and tilt the card')
   await page.screenshot({ path: join(shots, 'delivery-hover.png'), fullPage: true })
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'reduce' }])
-  await page.waitForFunction(() => getComputedStyle(document.querySelector('boss-helper-job').shadowRoot.querySelector('.job-card')).transform === 'none')
-  assert.equal(await firstCard.evaluate(el => getComputedStyle(el).transitionDuration), '0s')
+  await page.waitForFunction(
+    () =>
+      getComputedStyle(
+        document.querySelector('boss-helper-job').shadowRoot.querySelector('.job-card'),
+      ).transform === 'none',
+  )
+  assert.equal(await firstCard.evaluate((el) => getComputedStyle(el).transitionDuration), '0s')
   await page.emulateMediaFeatures([{ name: 'prefers-reduced-motion', value: 'no-preference' }])
   await page.mouse.move(0, 0)
   await firstCard.dispose()
-  const strip = await page.evaluateHandle(() => document.querySelector('boss-helper-job').shadowRoot.querySelector('.card-grid'))
+  const strip = await page.evaluateHandle(() =>
+    document.querySelector('boss-helper-job').shadowRoot.querySelector('.card-grid'),
+  )
   const box = await strip.asElement().boundingBox()
   await page.mouse.move(box.x + 200, box.y + 12)
   await page.mouse.down()
   await page.mouse.move(box.x + 60, box.y + 12, { steps: 10 })
   await page.mouse.up()
-  assert(await strip.evaluate(el => el.scrollLeft > 80), 'Mouse dragging must move the cards')
-  await strip.evaluate(el => { el.scrollLeft = 0 })
+  assert(await strip.evaluate((el) => el.scrollLeft > 80), 'Mouse dragging must move the cards')
+  await strip.evaluate((el) => {
+    el.scrollLeft = 0
+  })
   await click('下一组')
-  await page.waitForFunction(() => document.querySelector('boss-helper-job').shadowRoot.querySelector('.card-grid').scrollLeft > 200)
-  await strip.evaluate(el => { el.scrollLeft = 0; el.focus() })
+  await page.waitForFunction(
+    () =>
+      document.querySelector('boss-helper-job').shadowRoot.querySelector('.card-grid').scrollLeft >
+      200,
+  )
+  await strip.evaluate((el) => {
+    el.scrollLeft = 0
+    el.focus()
+  })
   await page.keyboard.press('ArrowRight')
-  await page.waitForFunction(() => document.querySelector('boss-helper-job').shadowRoot.querySelector('.card-grid').scrollLeft > 200)
-  await strip.evaluate(el => { el.scrollLeft = 0 })
+  await page.waitForFunction(
+    () =>
+      document.querySelector('boss-helper-job').shadowRoot.querySelector('.card-grid').scrollLeft >
+      200,
+  )
+  await strip.evaluate((el) => {
+    el.scrollLeft = 0
+  })
   await strip.dispose()
   await click('+2 个标签')
   await click('收起标签')
@@ -251,6 +381,7 @@ try {
   await page.screenshot({ path: join(shots, 'delivery-narrow.png'), fullPage: true })
   await page.setViewport({ width: 390, height: 844 })
   await assertGrid()
+  if (process.env.BOSS_TEST_APPEARANCE) await verifyAppearance(page, click, worker)
   assert.deepEqual(errors, [])
   console.log(
     'PASS: production Boss panel mounting, failure filtering, native filter show/hide, start/pause/resume bindings, light/dark/narrow screenshots. Start handler stubbed; no real delivery or AI request.',

@@ -28,8 +28,8 @@ const server = createServer(async (req, res) => {
   })
   const message =
     scenario === 'success'
-      ? '目标岗位：安全工程师\n\n匹配结论\n简历包含安全巡检经历，但职责和成果还不够具体。\n\n优先修改建议（最多 5 条）\n建议 1｜项目经历\n简历原文：参与安全巡检项目\n问题：没有说明本人负责范围和结果。\n来源依据：来源 1《项目经历写法》，正文强调职责与可核查成果。\n建议改写：建议：补充项目职责和实际成果。\n待补充：无\n\n求职方向与下一步\n补充检查范围和可核验结果。'
-      : '已收到的部分建议。'
+      ? '目标岗位：安全工程师\n\n匹配结论\n简历包含安全巡检经历，但职责和成果还不够具体。\n\n优先修改建议（最多 5 条）\n建议 1｜项目经历\n简历原文：参与安全巡检项目\n问题：没有说明本人负责范围和结果。\n来源依据：[来源1]《项目经历写法》，正文强调职责与可核查成果。\n建议改写：建议：补充项目职责和实际成果。\n待补充：无\n\n求职方向与下一步\n补充检查范围和可核验结果。'
+      : '已收到的部分建议。[来源1]'
   if (scenario === 'responses' || scenario === 'invalid-responses') {
     res.writeHead(200, { 'Content-Type': 'text/event-stream' })
     const events =
@@ -49,7 +49,7 @@ const server = createServer(async (req, res) => {
             {
               type: 'response.output_text.delta',
               item_id: 'msg_1',
-              delta: 'Responses 兼容修复：补充真实项目成果。',
+              delta: 'Responses 兼容修复：补充真实项目成果。[来源1]',
             },
             {
               type: 'response.output_item.done',
@@ -298,13 +298,13 @@ try {
 
   scenario = 'cancel'
   await click('根据检索内容和简历生成修改意见')
-  await waitText('已收到的部分建议。')
+  await waitText('已收到的部分建议。[来源1]')
   await click('停止生成')
   await waitIdle()
   await waitText('已停止生成，已保留收到的内容。')
   assert.equal(
     await page.$eval('[data-testid="research-advice"]', (el) => el.textContent),
-    '已收到的部分建议。',
+    '已收到的部分建议。[来源1]',
   )
 
   scenario = 'timeout'
@@ -313,7 +313,7 @@ try {
   await waitIdle()
   assert.equal(
     await page.$eval('[data-testid="research-advice"]', (el) => el.textContent),
-    '已收到的部分建议。',
+    '已收到的部分建议。[来源1]',
   )
   assert.equal(requests.length, 3, 'Timeout must not silently retry')
 
@@ -403,7 +403,7 @@ try {
   await page.reload()
   await openAdvice()
   await click('根据检索内容和简历生成修改意见')
-  await waitText('Responses 兼容修复：补充真实项目成果。')
+  await waitText('Responses 兼容修复：补充真实项目成果。[来源1]')
   await waitIdle()
   assert.equal(requests.at(-1).path, '/v1/responses')
   assert.equal(await page.$('.operation-error'), null)

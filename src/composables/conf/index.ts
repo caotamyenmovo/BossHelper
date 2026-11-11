@@ -15,25 +15,32 @@ import { defaultFormData } from './info'
 
 export * from './info'
 
-export const appearanceConf = useExtensionStorage(
-  'appearance-conf',
-  {
-    jobView: 'cards' as 'cards' | 'table',
-    tableHeight: 42, // 单位：10px
-    hideHeader: false,
-    changeIcon: false,
-    dynamicTitle: false,
-    changeBackground: false,
-    blurCard: false,
-    listSink: false,
-    contentWidth: 1136,
-    contentOffset: 25, // 0-25, 25则为关闭
-    leftChat: false,
-    chatBoxWidth: 600,
-    defaultShowChatBox: false,
-  },
-  { mergeDefaults: true },
-)
+export const appearanceDefaults = {
+  jobView: 'cards' as 'cards' | 'table',
+  tableHeight: 42, // 单位：10px
+  hideHeader: false,
+  changeIcon: false,
+  dynamicTitle: false,
+  changeBackground: false,
+  blurCard: false,
+  listSink: false,
+  contentWidth: 1136,
+  contentOffset: 25, // 0-25, 25则为关闭
+  contentOffsetEnabled: null as boolean | null, // null preserves the legacy 25 = off setting
+  leftChat: false,
+  chatBoxWidth: 600,
+  defaultShowChatBox: false,
+}
+
+export const appearanceConf = useExtensionStorage('appearance-conf', appearanceDefaults, {
+  mergeDefaults: true,
+})
+
+export const appearanceOffset = computed(() => {
+  const { contentOffset, contentOffsetEnabled } = appearanceConf.value
+  if (!(contentOffsetEnabled ?? contentOffset !== 25)) return undefined
+  return Number.isFinite(contentOffset) ? Math.min(30, Math.max(0, contentOffset)) : undefined
+})
 
 const isLoading = ref(true)
 const formData: FormData = reactive(jsonClone(defaultFormData))

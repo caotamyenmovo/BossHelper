@@ -12,7 +12,6 @@ export {}
 /* prettier-ignore */
 declare module 'vue' {
   export interface GlobalComponents {
-    About: typeof import('./src/components/Tabs/About.vue')['default']
     Alert: typeof import('./src/components/Alert.vue')['default']
     Appearance: typeof import('./src/components/Tabs/ConfigItem/Appearance.vue')['default']
     ChatBox: typeof import('./src/components/ChatBox.vue')['default']
@@ -58,7 +57,6 @@ declare module 'vue' {
 
 // For TSX support
 declare global {
-  const About: typeof import('./src/components/Tabs/About.vue')['default']
   const Alert: typeof import('./src/components/Alert.vue')['default']
   const Appearance: typeof import('./src/components/Tabs/ConfigItem/Appearance.vue')['default']
   const ChatBox: typeof import('./src/components/ChatBox.vue')['default']

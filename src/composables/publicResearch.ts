@@ -7,6 +7,17 @@ export interface PublicCareerComment {
 }
 
 export interface PublicCareerSource {
+  sourceId?: number
+  selected?: boolean
+  excludedByUser?: boolean
+  relevance?: 'direct' | 'adjacent' | 'unrelated' | 'unknown'
+  relevanceReason?: string
+  likes?: number | null
+  collects?: number | null
+  query?: string
+  images?: string[]
+  imageText?: string
+  imageStatus?: string
   title: string
   author: string
   url: string
@@ -22,8 +33,11 @@ export interface PublicCareerSource {
   readError?: string
 }
 
-export function buildPublicXiaohongshuSearchUrl(role: string): string {
-  const query = `site:xiaohongshu.com ${role.trim()} 简历`
+export function buildPublicXiaohongshuSearchUrl(
+  role: string,
+  keyword = `${role.trim()} 简历`,
+): string {
+  const query = `site:xiaohongshu.com ${keyword}`
   return `https://www.bing.com/search?q=${encodeURIComponent(query)}`
 }
 
@@ -90,20 +104,23 @@ export function parsePublicXiaohongshuResults(document: Document): PublicCareerS
   return results
 }
 
-export async function searchPublicXiaohongshu(role: string): Promise<PublicCareerSource[]> {
+export async function searchPublicXiaohongshu(
+  role: string,
+  keyword?: string,
+): Promise<PublicCareerSource[]> {
   let response: Response
   try {
-    response = await fetch(buildPublicXiaohongshuSearchUrl(role), {
+    response = await fetch(buildPublicXiaohongshuSearchUrl(role, keyword), {
       credentials: 'omit',
       signal: AbortSignal.timeout(15_000),
     })
   } catch {
     throw new Error(
-      '公开搜索连接失败或超时。可以使用“小红书网页检索”，直接读取浏览器中的搜索结果。',
+      '公开搜索连接失败或超时。可以使用“打开小红书搜索”，直接读取浏览器中的搜索结果。',
     )
   }
   if (!response.ok)
-    throw new Error(`公开搜索暂时不可用（HTTP ${response.status}），可改用“小红书网页检索”。`)
+    throw new Error(`公开搜索暂时不可用（HTTP ${response.status}），可改用“打开小红书搜索”。`)
   const document = new DOMParser().parseFromString(await response.text(), 'text/html')
   const results = parsePublicXiaohongshuResults(document)
   if (results.length) return results
@@ -111,13 +128,13 @@ export async function searchPublicXiaohongshu(role: string): Promise<PublicCaree
     /验证码|安全验证|verify|captcha|challenge/i.test(document.title) ||
     document.querySelector('#b_captcha, #captcha')
   )
-    throw new Error('搜索服务要求验证，未取得检索结果。请使用“小红书网页检索”。')
+    throw new Error('搜索服务要求验证，未取得检索结果。请使用“打开小红书搜索”。')
   if (document.querySelector('#b_results h2 a, li.b_algo h2 a'))
     throw new Error(
-      '公开搜索返回了其他网站或非笔记页面，没有可用的小红书帖子。请使用“小红书网页检索”。',
+      '公开搜索返回了其他网站或非笔记页面，没有可用的小红书帖子。请使用“打开小红书搜索”。',
     )
   throw new Error(
-    '公开索引未返回可识别的帖子结果，不代表小红书站内没有内容。请使用“小红书网页检索”。',
+    '公开索引未返回可识别的帖子结果，不代表小红书站内没有内容。请使用“打开小红书搜索”。',
   )
 }
 

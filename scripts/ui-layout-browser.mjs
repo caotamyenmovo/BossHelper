@@ -23,6 +23,22 @@ try {
   const worker = await target.worker()
   await worker.evaluate(async () => {
     await chrome.storage.local.set({
+      careerXiaohongshuResearchV1: {
+        token: 'layout-fixture',
+        tabId: -1,
+        role: 'AI Agent 开发',
+        status: 'ready',
+        createdAt: Date.now(),
+        expiresAt: Date.now() + 600000,
+        message: '检索完成：找到 12 条帖子。',
+        sources: Array.from({ length: 12 }, (_, i) => ({
+          title: 'AI Agent 开发简历：如何写清项目技术难点与个人贡献 ' + (i + 1),
+          url: 'https://www.xiaohongshu.com/explore/fixture-' + i,
+          author: '经验分享者 ' + (i + 1),
+          contentKind: 'visible-card',
+          excerpt: '先说明项目解决的问题，再介绍实现方式、验证过程和实际结果。',
+        })),
+      },
       'boss-protocol': '2026/10/21',
       'career-workbench:profiles': [
         {
@@ -95,6 +111,13 @@ try {
   await page.screenshot({ path: join(shots, 'resume-light.png'), fullPage: true })
   await click('简历建议')
   await page.waitForSelector('.research-columns')
+  await page.waitForFunction(
+    () => document.querySelectorAll('.research-source-number').length === 12,
+  )
+  assert.deepEqual(
+    await page.$$eval('.research-source-number', (nodes) => nodes.map((n) => n.textContent.trim())),
+    Array.from({ length: 12 }, (_, i) => String(i + 1).padStart(2, '0')),
+  )
   assert.equal(
     await page.$eval(
       '.research-columns',
@@ -118,7 +141,66 @@ try {
     })),
   )
   await page.screenshot({ path: join(shots, 'advice-dark.png'), fullPage: true })
+  await page.evaluate(() => window.scrollTo(0, 900))
+  await page.waitForFunction(
+    () =>
+      Math.abs(document.querySelector('.research-result-column').getBoundingClientRect().top - 20) <
+      2,
+  )
+  assert(
+    await page.$eval(
+      '.research-result-column',
+      (el) => el.getBoundingClientRect().bottom <= innerHeight - 18,
+    ),
+    'Sticky advice must fit the viewport',
+  )
+  await page.screenshot({ path: join(shots, 'advice-following-dark.png') })
+  // Stress the rendered result region without making an AI request.
+  await page.evaluate(() => {
+    const text = document.createElement('p')
+    text.dataset.fixture = 'long-advice'
+    text.style.whiteSpace = 'pre-wrap'
+    text.textContent = Array.from(
+      { length: 70 },
+      (_, i) => i + 1 + '. 描述项目场景、关键实现及验证结果。',
+    ).join(String.fromCharCode(10))
+    document.querySelector('.advice-result').append(text)
+    const pane = document.querySelector('.research-result-column')
+    pane.scrollTop = pane.scrollHeight
+  })
+  assert(
+    await page.$eval(
+      '.research-result-column',
+      (el) => el.scrollTop > 0 && el.scrollHeight > el.clientHeight,
+    ),
+    'Long advice must scroll internally',
+  )
+  await page.$eval('.research-result-column > details:last-child', (el) => {
+    el.open = true
+  })
+  await page.$eval('.research-result-column', (el) => {
+    el.scrollTop = el.scrollHeight
+  })
+  assert(
+    await page.$eval(
+      '.research-result-column > details:last-child',
+      (el) => el.getBoundingClientRect().bottom <= innerHeight,
+    ),
+    'Bottom controls must remain reachable',
+  )
   await page.setViewport({ width: 600, height: 900 })
+  assert.equal(
+    await page.$eval('.research-result-column', (el) => getComputedStyle(el).position),
+    'static',
+  )
+  assert.equal(
+    await page.$eval('.research-result-column', (el) => getComputedStyle(el).maxHeight),
+    'none',
+  )
+  await page.evaluate(() => {
+    document.querySelector('[data-fixture=long-advice]').remove()
+    window.scrollTo(0, 0)
+  })
   await page.select('[aria-label="页面主题"]', 'system')
   await page.emulateMediaFeatures([{ name: 'prefers-color-scheme', value: 'light' }])
   await page.waitForFunction(() => document.documentElement.classList.contains('light'))

@@ -1,7 +1,7 @@
 import { ref } from 'vue'
 
 import { defineUnlistedScript } from '#imports'
-import { appearanceConf } from '@/composables/conf'
+import { appearanceConf, appearanceOffset } from '@/composables/conf'
 import { useConfigSections } from '@/composables/conf/sections'
 import type { WorkflowData } from '@/composables/useApplying/type'
 import { createLazyObject, isInitialized } from '@/composables/useApplying/type'
@@ -303,13 +303,11 @@ export class BossHelperCtx extends HelperContext<BossHelperCtx, BoosJobData, {}>
     this.geek = new GeekChatClientManager()
 
     watch(
-      appearanceConf.value,
-      (v) => {
+      () => [appearanceConf.value.leftChat, appearanceOffset.value] as const,
+      ([leftChat, offset]) => {
         if (!contentElm) return
-        contentElm.style.marginRight =
-          v.leftChat && v.contentOffset != 25 ? `${v.contentOffset}%` : 'auto'
-        contentElm.style.marginLeft =
-          !v.leftChat && v.contentOffset != 25 ? `${v.contentOffset}%` : 'auto'
+        contentElm.style.marginRight = leftChat && offset !== undefined ? `${offset}%` : 'auto'
+        contentElm.style.marginLeft = !leftChat && offset !== undefined ? `${offset}%` : 'auto'
       },
       { immediate: true },
     )

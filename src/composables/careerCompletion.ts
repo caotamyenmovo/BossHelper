@@ -5,6 +5,8 @@ import { createCareerTransport } from '../utils/careerAiTransport'
 import type { ModelConfData } from './useModel/type'
 
 export interface CareerCompletionOptions {
+  images?: string[]
+  jobDescription?: string
   signal?: AbortSignal
   onText?: (text: string) => void
   onStatus?: (status: string) => void
@@ -78,7 +80,20 @@ export async function runCareerCompletion(
           options.onStatus?.('模型正在思考，等待正文…')
       }),
     )
-    const settings = { model, prompt, abortSignal: controller.signal, maxRetries: 0 }
+    const input = options.images?.length
+      ? {
+          messages: [
+            {
+              role: 'user' as const,
+              content: [
+                { type: 'text' as const, text: prompt },
+                ...options.images.map((image) => ({ type: 'image' as const, image })),
+              ],
+            },
+          ],
+        }
+      : { prompt }
+    const settings = { model, ...input, abortSignal: controller.signal, maxRetries: 0 }
     options.onStatus?.(streaming ? '正在等待模型响应…' : '正在等待完整结果…')
     if (streaming) {
       const result = streamText(settings)

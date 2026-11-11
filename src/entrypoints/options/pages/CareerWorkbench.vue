@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import OperationError from '@/components/OperationError.vue'
 
+import OperationError from '@/components/OperationError.vue'
 import { createCareerAssistant, hasResearchContent } from '@/composables/careerAi'
 import type { ParsedResume } from '@/composables/careerAi'
 import { runCareerCompletion } from '@/composables/careerCompletion'
@@ -20,6 +20,18 @@ import { createModel } from '@/composables/useModel/providers'
 import { counter } from '@/message'
 import { BOSS_IMPORT_KEY } from '@/utils/bossResumeImport'
 import type { BossImportState } from '@/utils/bossResumeImport'
+import {
+  defaultResearchPlan,
+  planResearch,
+  safeResearchQuery,
+  mergeResearchSources,
+  rankResearchSources,
+  classifyResearchSources,
+  readResearchImages,
+  waitForResearchTask,
+  validateResearchCitations,
+} from '@/utils/careerResearchFlow'
+import type { ResearchPlan } from '@/utils/careerResearchFlow'
 import { jsonClone } from '@/utils/deepmerge'
 import { exportJson } from '@/utils/jsonImportExport'
 import { extractResumeFields, hasResumeFields } from '@/utils/resumeFields'
@@ -107,12 +119,26 @@ const researchAdviceBusy = ref(false)
 const researchAdviceStatus = ref('')
 let researchAdviceController: AbortController | undefined
 const researchRole = ref('')
+const researchJd = ref('')
+const researchPlan = ref<ResearchPlan>(defaultResearchPlan(''))
+const researchPlanEdited = ref(false)
+const researchAutoBusy = ref(false)
+let researchAutoController: AbortController | undefined
+const researchRunKey = 'careerResearchRunV2'
 const researchSources = ref<PublicCareerSource[]>([])
 const researchSummary = ref('')
 const researchContentCount = computed(() => researchSources.value.filter(hasResearchContent).length)
 const researchBusy = ref(false)
 const researchWebBusy = ref(false)
 const researchNotice = ref('')
+const publicResearchFailed = ref(false)
+watch(
+  researchNotice,
+  () => {
+    publicResearchFailed.value = false
+  },
+  { flush: 'sync' },
+)
 const researchSourceRole = ref('')
 const xhsResearch = createXiaohongshuResearch(browser)
 let researchEpoch = 0
@@ -157,6 +183,7 @@ function allowDiscardDraft() {
   return !draftDirty.value || window.confirm('当前简历有未保存的修改，放弃这些修改并切换？')
 }
 function clearProfileContext(keepSources = false) {
+  researchAutoController?.abort()
   profileContextEpoch++
   analysisController?.abort()
   researchAdviceController?.abort()
@@ -165,6 +192,9 @@ function clearProfileContext(keepSources = false) {
   researchSummary.value = ''
   researchAdviceStatus.value = ''
   if (!keepSources) {
+    researchJd.value = ''
+    researchPlan.value = defaultResearchPlan('')
+    researchPlanEdited.value = false
     researchRole.value = ''
     researchSources.value = []
     researchSourceRole.value = ''
@@ -185,6 +215,7 @@ watch(
   draft,
   () => {
     if (draftDirty.value) {
+      researchAutoController?.abort()
       profileContextEpoch++
       saved.value = false
       analysisController?.abort()
@@ -255,7 +286,15 @@ function newAdviceRecord(kind: CareerAdviceRecord['kind']): CareerAdviceRecord {
         ? researchRole.value.trim()
         : (selectedProfile.value?.targetRoles.join('、') ?? ''),
     model: configuredModelName.value,
-    sources: kind === 'research' ? jsonClone(researchSources.value.filter(hasResearchContent)) : [],
+    jobDescription: kind === 'research' ? researchJd.value : undefined,
+    sources:
+      kind === 'research'
+        ? jsonClone(
+            researchSources.value
+              .map((s, i) => ({ ...s, sourceId: s.sourceId ?? i + 1 }))
+              .filter(hasResearchContent),
+          )
+        : [],
     text: '',
     status: 'partial',
     done: false,
@@ -278,7 +317,7 @@ async function retryAdviceSave() {
   adviceRetryBusy.value = true
   if (error.value.startsWith('建议尚未保存，')) error.value = ''
   try {
-  for (const record of [...pendingAdvice.value]) await saveAdviceRecord(record)
+    for (const record of [...pendingAdvice.value]) await saveAdviceRecord(record)
   } finally {
     adviceRetryBusy.value = false
   }
@@ -364,22 +403,234 @@ function prepareResearch() {
   return role
 }
 
+async function persistResearchRun() {
+  await browser.storage.local.set({
+    [researchRunKey]: jsonClone({
+      profileId: selectedId.value,
+      role: researchRole.value,
+      jobDescription: researchJd.value,
+      plan: researchPlan.value,
+      sources: researchSources.value,
+      message: researchNotice.value,
+    }),
+  })
+}
+async function restoreResearchRun() {
+  const owner = researchEpoch
+  const profileId = selectedId.value
+  const savedRun = (await browser.storage.local.get(researchRunKey))[researchRunKey] as
+    | {
+        profileId: string
+        role: string
+        jobDescription: string
+        plan: ResearchPlan
+        sources: PublicCareerSource[]
+        message: string
+      }
+    | undefined
+  if (
+    owner !== researchEpoch ||
+    profileId !== selectedId.value ||
+    !savedRun ||
+    savedRun.profileId !== selectedId.value ||
+    !Array.isArray(savedRun.sources)
+  )
+    return
+  researchRole.value = savedRun.role
+  researchSourceRole.value = savedRun.role
+  researchJd.value = savedRun.jobDescription || ''
+  researchPlan.value = savedRun.plan || defaultResearchPlan(savedRun.role)
+  researchPlanEdited.value = true
+  researchSources.value = mergeResearchSources([], savedRun.sources)
+  researchNotice.value = '已恢复上次候选和读取进度；可以调整来源、生成建议或补充检索。'
+}
+async function toggleResearchSource(source: PublicCareerSource) {
+  source.selected = source.selected === false
+  source.excludedByUser = !source.selected
+  researchSummary.value = ''
+  researchAdviceStatus.value = ''
+  try {
+    await persistResearchRun()
+  } catch {
+    error.value = '来源选择尚未保存，请重试。'
+  }
+}
+async function runAutomaticResearch(supplement = false) {
+  if (
+    researchAutoBusy.value ||
+    researchBusy.value ||
+    researchWebBusy.value ||
+    researchAdviceBusy.value ||
+    analysisBusy.value
+  )
+    return
+  if (!selectedProfile.value || !configuredModelKey.value) {
+    error.value = '请先选择简历并配置 AI 模型。'
+    return
+  }
+  const role = researchRole.value.trim() || selectedProfile.value.targetRoles[0] || ''
+  if (!safeResearchQuery(role)) {
+    error.value = '请填写简短岗位名称，不要包含电话、邮箱或网址。'
+    return
+  }
+  researchRole.value = role
+  researchSourceRole.value = role
+  const controller = new AbortController()
+  researchAutoController = controller
+  const signal = controller.signal
+  const owner = ++researchEpoch
+  researchAutoBusy.value = true
+  researchBusy.value = true
+  researchSummary.value = ''
+  researchAdviceStatus.value = ''
+  error.value = ''
+  if (!supplement) researchSources.value = []
+  let tabId: number | undefined
+  let completed = false
+  const report = (message: string) => {
+    if (owner === researchEpoch) researchNotice.value = message
+  }
+  try {
+    await xhsResearch.cancel()
+    signal.throwIfAborted()
+    report('正在规划搜索词，仅使用目标岗位，不向搜索网站发送简历。')
+    if (!researchPlanEdited.value) {
+      const planned = await planResearch(role, completeWithConfiguredAi, signal)
+      signal.throwIfAborted()
+      researchPlan.value = planned
+    }
+    const plan = jsonClone(researchPlan.value)
+    if (!plan.queries.length || plan.queries.some((q) => !safeResearchQuery(q.text)))
+      throw new Error('搜索词无效，请在搜索计划中调整。')
+    for (const [index, query] of plan.queries.slice(0, 4).entries()) {
+      signal.throwIfAborted()
+      if (query.scope === 'adjacent' && rankResearchSources(researchSources.value).length >= 6)
+        continue
+      report('检索 ' + (index + 1) + '/4：' + query.text)
+      const started = await xhsResearch.start(role, query.text, undefined, tabId)
+      tabId = started.tabId
+      const task = await waitForResearchTask(xhsResearch.poll, signal, (message) =>
+        report('检索 ' + (index + 1) + '/4 · ' + message),
+      )
+      researchSources.value = mergeResearchSources(
+        researchSources.value,
+        task.sources.map((s) => ({ ...s, query: query.text })),
+      )
+      report('正在筛选相关帖子，排除工具推广和无关经验…')
+      const classified = await classifyResearchSources(
+        plan.direction,
+        researchSources.value,
+        completeWithConfiguredAi,
+        signal,
+      )
+      signal.throwIfAborted()
+      researchSources.value = classified
+      await persistResearchRun()
+    }
+    const candidates = rankResearchSources(researchSources.value)
+      .filter((s) => !hasResearchContent(s) || (s.images?.length && !s.imageText))
+      .slice(0, 6)
+    for (const [index, source] of candidates.entries()) {
+      signal.throwIfAborted()
+      report('读取 ' + (index + 1) + '/' + candidates.length + ' · ' + source.title)
+      const started = await xhsResearch.readNote(
+        role,
+        jsonClone(source),
+        jsonClone(researchSources.value),
+        tabId,
+      )
+      tabId = started.tabId
+      const task = await waitForResearchTask(xhsResearch.poll, signal, (message, snapshot) => {
+        report('读取 ' + (index + 1) + '/' + candidates.length + ' · ' + message)
+        researchSources.value = mergeResearchSources(researchSources.value, snapshot.sources)
+      })
+      researchSources.value = mergeResearchSources(researchSources.value, task.sources)
+      const note = researchSources.value.find((s) => s.sourceId === source.sourceId)!
+      if (note.images?.length) {
+        report('正在识别来源 ' + note.sourceId + ' 的图片（最多 3 张）…')
+        const enriched = await readResearchImages(jsonClone(note), completeWithConfiguredAi, signal)
+        signal.throwIfAborted()
+        researchSources.value = researchSources.value.map((s) =>
+          s.sourceId === note.sourceId ? enriched : s,
+        )
+      }
+      await persistResearchRun()
+    }
+    report('正在根据正文与图片重新核验经验适用性…')
+    const classified = await classifyResearchSources(
+      plan.direction,
+      researchSources.value,
+      completeWithConfiguredAi,
+      signal,
+    )
+    signal.throwIfAborted()
+    researchSources.value = classified
+    report(
+      '检索与读取完成：' +
+        researchContentCount.value +
+        ' 条已选用证据。热度仅比较本次候选，未知数据不等于 0。',
+    )
+    await persistResearchRun()
+    completed = true
+  } catch (cause) {
+    report(
+      signal.aborted
+        ? '已停止，保留已取得的帖子和正文。可补充检索或手动生成建议。'
+        : '流程已暂停：' + (cause instanceof Error ? cause.message : String(cause)),
+    )
+    await xhsResearch.cancel(true)
+  } finally {
+    if (owner === researchEpoch) {
+      researchBusy.value = false
+      try {
+        await persistResearchRun()
+      } catch {
+        error.value = '读取进度暂未保存，当前内容仍保留在页面。'
+      }
+    }
+  }
+  try {
+    if (completed && !signal.aborted && owner === researchEpoch) {
+      if (researchContentCount.value) await createResearchAdvice()
+      else
+        report(
+          '当前没有足够的相关正文证据。请调整搜索词补充检索，或手动选用并读取来源；不会仅凭标题生成建议。',
+        )
+    }
+  } finally {
+    researchAutoBusy.value = false
+    researchAutoController = undefined
+  }
+}
+
 async function searchResearch() {
+  if (
+    researchBusy.value ||
+    researchAutoBusy.value ||
+    researchWebBusy.value ||
+    researchAdviceBusy.value ||
+    analysisBusy.value
+  )
+    return
   const role = prepareResearch()
   if (!role) return
   const epoch = researchEpoch
   researchBusy.value = true
   try {
     await xhsResearch.cancel()
-    const results = await searchPublicXiaohongshu(role)
+    const results = await searchPublicXiaohongshu(
+      role,
+      (researchPlanEdited.value ? researchPlan.value : defaultResearchPlan(role)).queries[0]?.text,
+    )
     if (epoch !== researchEpoch) return
-    researchSources.value = results.slice(0, 8)
+    researchSources.value = mergeResearchSources([], results.slice(0, 8))
     researchSourceRole.value = role
     researchNotice.value = `检索完成：找到 ${researchSources.value.length} 条帖子。请手动点击感兴趣帖子下方的“读取正文和评论”。`
   } catch (cause) {
     if (epoch === researchEpoch) {
       researchWebBusy.value = false
       researchNotice.value = cause instanceof Error ? cause.message : String(cause)
+      publicResearchFailed.value = true
     }
   } finally {
     if (epoch === researchEpoch) researchBusy.value = false
@@ -387,11 +638,22 @@ async function searchResearch() {
 }
 
 async function startWebResearch() {
+  if (
+    researchBusy.value ||
+    researchAutoBusy.value ||
+    researchWebBusy.value ||
+    researchAdviceBusy.value ||
+    analysisBusy.value
+  )
+    return
   const role = prepareResearch()
   if (!role) return
   researchWebBusy.value = true
   try {
-    const task = await xhsResearch.start(role)
+    const task = await xhsResearch.start(
+      role,
+      (researchPlanEdited.value ? researchPlan.value : defaultResearchPlan(role)).queries[0]?.text,
+    )
     researchNotice.value = task.message
   } catch (cause) {
     researchWebBusy.value = false
@@ -419,8 +681,46 @@ async function readResearchNote(source: PublicCareerSource) {
     researchNotice.value = cause instanceof Error ? cause.message : String(cause)
   }
 }
+async function recognizeSourceImages(source: PublicCareerSource) {
+  if (
+    researchBusy.value ||
+    researchAutoBusy.value ||
+    researchWebBusy.value ||
+    researchAdviceBusy.value
+  )
+    return
+  const controller = new AbortController()
+  researchAutoController = controller
+  researchAutoBusy.value = true
+  researchBusy.value = true
+  const owner = researchEpoch
+  researchNotice.value = '正在使用当前 AI 配置识别最多 3 张帖子图片…'
+  try {
+    const result = await readResearchImages(
+      jsonClone(source),
+      completeWithConfiguredAi,
+      controller.signal,
+    )
+    controller.signal.throwIfAborted()
+    if (owner !== researchEpoch) return
+    researchSources.value = researchSources.value.map((s) => (s.url === source.url ? result : s))
+    researchSummary.value = ''
+    researchNotice.value = result.imageStatus || '未发现可读取图片。'
+    await persistResearchRun()
+  } catch (cause) {
+    if (owner === researchEpoch)
+      researchNotice.value = controller.signal.aborted
+        ? '已停止图片识别，保留已有正文。'
+        : String(cause)
+  } finally {
+    researchAutoBusy.value = false
+    researchAutoController = undefined
+    if (owner === researchEpoch) researchBusy.value = false
+  }
+}
 
 async function syncWebResearch(restore = false) {
+  if (researchAutoBusy.value) return
   if (xhsPolling || (!restore && !researchWebBusy.value)) return
   const epoch = researchEpoch
   xhsPolling = true
@@ -436,7 +736,7 @@ async function syncWebResearch(restore = false) {
     researchWebBusy.value = task.status === 'pending'
     if (task.sources.length || task.status === 'ready') {
       researchSourceRole.value = task.role
-      researchSources.value = task.sources
+      researchSources.value = mergeResearchSources([], task.sources)
     }
   } catch (cause) {
     researchNotice.value = `读取小红书页面失败：${cause instanceof Error ? cause.message : String(cause)}`
@@ -447,6 +747,12 @@ async function syncWebResearch(restore = false) {
 }
 
 async function stopWebResearch() {
+  if (researchAutoBusy.value) {
+    researchAutoController?.abort()
+    researchAdviceController?.abort()
+    await xhsResearch.cancel(true)
+    return
+  }
   researchEpoch++
   researchWebBusy.value = false
   const task = await xhsResearch.cancel(true)
@@ -455,7 +761,10 @@ async function stopWebResearch() {
 }
 
 function changeResearchRole(value: string) {
+  researchAutoController?.abort()
   researchRole.value = value
+  researchPlan.value = defaultResearchPlan(value)
+  researchPlanEdited.value = false
   researchEpoch++
   researchSources.value = []
   researchSummary.value = ''
@@ -489,6 +798,7 @@ async function createResearchAdvice() {
   error.value = ''
   try {
     const result = await assistant.summarizeResearch(role, record.sources, record.profileSnapshot, {
+      jobDescription: record.jobDescription,
       signal: controller.signal,
       onText: (text) => {
         received = text
@@ -499,6 +809,7 @@ async function createResearchAdvice() {
       },
     })
     received = result
+    validateResearchCitations(result, record.sources)
     record.status = 'complete'
     if (owner === profileContextEpoch) {
       researchSummary.value = result
@@ -549,7 +860,7 @@ async function summarizePastedSource() {
     researchSourceRole.value =
       researchRole.value.trim() || selectedProfile.value?.targetRoles[0] || ''
     if (!researchSourceRole.value) throw new Error('请填写目标岗位后再生成建议。')
-    researchSources.value = [source]
+    researchSources.value = mergeResearchSources(researchSources.value, [source])
     await createResearchAdvice()
   } catch (cause) {
     error.value = cause instanceof Error ? cause.message : String(cause)
@@ -619,7 +930,12 @@ async function openHistory(kind: 'history' | 'advice-history') {
   }
 }
 function beforeLeave(event: BeforeUnloadEvent) {
-  if (draftDirty.value || pendingAdvice.value.length || interviewFlow.state.dirty) {
+  if (
+    draftDirty.value ||
+    pendingAdvice.value.length ||
+    interviewFlow.state.dirty ||
+    researchAutoBusy.value
+  ) {
     event.preventDefault()
     event.returnValue = ''
   }
@@ -629,6 +945,7 @@ function openResearch() {
   view.value = 'research'
   if (!researchRole.value && selectedProfile.value?.targetRoles.length) {
     researchRole.value = selectedProfile.value.targetRoles[0] ?? ''
+    researchPlan.value = defaultResearchPlan(researchRole.value)
   }
 }
 
@@ -671,6 +988,9 @@ function editProfile(profile: ResumeProfile) {
   selectedId.value = profile.id
   draft.value = jsonClone(profile)
   saved.value = false
+  void restoreResearchRun().catch(() => {
+    researchNotice.value = '上次检索进度恢复失败，可重新开始。'
+  })
 }
 
 function cancelEdit() {
@@ -931,6 +1251,7 @@ onMounted(() => {
   bossImportPoll = window.setInterval(() => void syncBossImport(), 1000)
 })
 onBeforeUnmount(() => {
+  researchAutoController?.abort()
   window.removeEventListener('beforeunload', beforeLeave)
   browser.storage.onChanged.removeListener(onBossStorageChanged)
   void interviewFlow.close()
@@ -1016,8 +1337,20 @@ onBeforeUnmount(() => {
     <div v-if="pendingAdvice.length" class="rounded border border-warning p-3">
       <p class="text-sm">{{ pendingAdvice.length }} 条建议尚未保存，请保留页面并重试。</p>
       <div class="flex gap-2 mt-2">
-        <UButton label="重试保存建议" size="sm" :loading="adviceRetryBusy" :disabled="adviceRetryBusy" @click="retryAdviceSave" />
-        <UButton label="导出未保存建议" size="sm" variant="outline" color="neutral" @click="exportJson(pendingAdvice, '未保存的求职建议')" />
+        <UButton
+          label="重试保存建议"
+          size="sm"
+          :loading="adviceRetryBusy"
+          :disabled="adviceRetryBusy"
+          @click="retryAdviceSave"
+        />
+        <UButton
+          label="导出未保存建议"
+          size="sm"
+          variant="outline"
+          color="neutral"
+          @click="exportJson(pendingAdvice, '未保存的求职建议')"
+        />
       </div>
     </div>
     <section v-if="view === 'resume'" class="space-y-5">
@@ -1236,8 +1569,8 @@ onBeforeUnmount(() => {
       <div class="research-toolbar space-y-2">
         <h3 class="text-base font-semibold">岗位相关经验与简历建议</h3>
         <p class="text-sm text-muted">
-          可打开小红书网页搜索并读取页面中的帖子，也可尝试公开索引。检索词仅包含岗位方向与“简历”；点击生成建议时，才会将当前简历和来源内容发送给配置的
-          AI。
+          点击“检索并分析经验”会使用当前 AI 配置规划搜索、筛选帖子及识别图片，并将当前简历、可选 JD
+          和已选来源用于生成建议。搜索网站只接收岗位与经验关键词。
         </p>
         <div class="flex flex-wrap items-end gap-2">
           <UFormField label="目标岗位" orientation="vertical" class="min-w-60 flex-1">
@@ -1251,28 +1584,119 @@ onBeforeUnmount(() => {
             />
           </UFormField>
           <UButton
-            label="小红书网页检索"
+            label="检索并分析经验"
             icon="i-lucide-external-link"
-            :loading="researchWebBusy"
-            :disabled="researchBusy || researchAdviceBusy || analysisBusy"
-            @click="startWebResearch"
+            :loading="researchAutoBusy"
+            :disabled="
+              researchBusy ||
+              researchWebBusy ||
+              researchAdviceBusy ||
+              analysisBusy ||
+              !selectedProfile
+            "
+            @click="runAutomaticResearch(false)"
           />
           <UButton
-            label="检索公开内容"
-            :disabled="researchWebBusy || researchAdviceBusy || analysisBusy"
+            label="打开小红书搜索"
+            :disabled="researchBusy || researchAutoBusy || researchAdviceBusy || analysisBusy"
             variant="outline"
             icon="i-lucide-search"
-            :loading="researchBusy"
-            @click="searchResearch"
+            :loading="researchWebBusy"
+            @click="startWebResearch"
           />
         </div>
+        <p class="text-xs text-muted">
+          “检索并分析经验”先由 AI 规划，再打开网页；“打开小红书搜索”直接打开站内搜索，不调用 AI。
+        </p>
+        <UFormField label="职位描述 JD（可选，仅用于判断经验适用性）" orientation="vertical">
+          <UTextarea
+            v-model="researchJd"
+            :rows="2"
+            class="w-full"
+            :disabled="researchAutoBusy || researchAdviceBusy"
+            placeholder="粘贴岗位职责和要求，不填也能使用"
+          />
+        </UFormField>
+        <details class="research-plan">
+          <summary>
+            搜索计划 · {{ researchPlan.direction || researchRole || '填写岗位后生成' }}
+            <span class="text-muted">（可调整）</span>
+          </summary>
+          <p class="text-xs text-muted my-2">
+            未手动编辑时，开始后 AI 会细化搜索词。修改任一词后使用你的计划；首轮最多 4 组、30
+            条候选、6 篇正文，每篇最多 3 张图片。
+          </p>
+          <div
+            v-for="(query, index) in researchPlan.queries"
+            :key="index"
+            class="flex items-center gap-2 my-2"
+          >
+            <span class="text-xs text-muted shrink-0"
+              >{{ index + 1 }} · {{ query.scope === 'direct' ? '同岗位' : '不足时补充' }}</span
+            >
+            <UInput
+              v-model="query.text"
+              class="flex-1"
+              :disabled="researchAutoBusy || researchAdviceBusy"
+              :aria-label="'搜索词 ' + (index + 1)"
+              @update:model-value="researchPlanEdited = true"
+            />
+          </div>
+          <div class="flex flex-wrap gap-2">
+            <UButton
+              v-if="researchSources.length"
+              label="保留来源并补充检索"
+              size="sm"
+              variant="outline"
+              :disabled="researchBusy || researchWebBusy || researchAdviceBusy || researchAutoBusy"
+              @click="runAutomaticResearch(true)"
+            />
+          </div>
+        </details>
+        <details class="research-plan" data-testid="research-fallback">
+          <summary>备用方式 · 公开索引检索</summary>
+          <p class="my-2 text-xs text-muted">
+            查询 Bing 已收录的小红书笔记，不打开小红书网页、不调用
+            AI。收录可能不完整，无结果不代表站内没有相关帖子。
+          </p>
+          <UButton
+            label="公开索引检索"
+            size="sm"
+            variant="outline"
+            icon="i-lucide-search"
+            :loading="researchBusy && !researchAutoBusy"
+            :disabled="
+              researchBusy ||
+              researchAutoBusy ||
+              researchWebBusy ||
+              researchAdviceBusy ||
+              analysisBusy
+            "
+            @click="searchResearch"
+          />
+        </details>
       </div>
 
       <div v-if="researchNotice" class="space-y-2 rounded border border-default p-3">
         <p role="status" class="text-sm">{{ researchNotice }}</p>
         <UButton
-          v-if="researchWebBusy"
-          label="停止等待"
+          v-if="publicResearchFailed"
+          label="改用小红书网页搜索"
+          size="sm"
+          variant="outline"
+          icon="i-lucide-external-link"
+          :disabled="
+            researchBusy ||
+            researchAutoBusy ||
+            researchWebBusy ||
+            researchAdviceBusy ||
+            analysisBusy
+          "
+          @click="startWebResearch"
+        />
+        <UButton
+          v-if="researchWebBusy || researchAutoBusy"
+          label="停止并保留进度"
           size="sm"
           color="neutral"
           variant="outline"
@@ -1294,21 +1718,70 @@ onBeforeUnmount(() => {
               <p class="text-xs text-muted">输入目标岗位开始检索，也可粘贴链接和正文。</p>
             </div>
             <p class="text-sm text-muted">
-              点击单条帖子下方的按钮读取正文和评论。评论按页面显示点赞数排序，取已加载内容中前 5
-              条；仅有标题的帖子不参与 AI 分析。
+              相关帖子优先参考收藏和点赞；仅比较本次候选，未知数据不等于
+              0。可手动选用或排除来源；只有标题或摘要的帖子不用于具体改写。
             </p>
             <article
-              v-for="source in researchSources"
+              v-for="(source, sourceIndex) in researchSources"
               :key="source.url"
               class="border-b border-default pb-3"
             >
-              <a
-                :href="source.url"
-                target="_blank"
-                rel="noopener noreferrer"
-                class="font-medium text-primary"
-                >{{ source.title }}</a
-              >
+              <div class="research-source-heading">
+                <span
+                  class="research-source-number"
+                  :aria-label="`来源 ${source.sourceId ?? sourceIndex + 1}`"
+                >
+                  {{ String(source.sourceId ?? sourceIndex + 1).padStart(2, '0') }}
+                </span>
+                <a
+                  :href="source.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="font-medium text-primary"
+                  >{{ source.title }}</a
+                >
+              </div>
+              <div class="research-source-meta">
+                <span>收藏 {{ source.collects == null ? '未知' : source.collects }}</span>
+                <span>点赞 {{ source.likes == null ? '未知' : source.likes }}</span>
+                <span v-if="source.relevance">{{
+                  {
+                    direct: '同岗位',
+                    adjacent: '邻近方向',
+                    unrelated: '不相关',
+                    unknown: '待审核',
+                  }[source.relevance]
+                }}</span>
+                <UButton
+                  :label="source.selected === false ? '选用此来源' : '已选用 · 排除'"
+                  size="xs"
+                  :variant="source.selected === false ? 'outline' : 'soft'"
+                  :disabled="researchAutoBusy || researchAdviceBusy || researchWebBusy"
+                  @click="toggleResearchSource(source)"
+                />
+              </div>
+              <p v-if="source.relevanceReason" class="mt-1 text-xs text-muted">
+                {{ source.relevanceReason }}
+              </p>
+              <p v-if="source.query" class="mt-1 text-xs text-muted">检索词：{{ source.query }}</p>
+              <p v-if="source.imageStatus" class="mt-1 text-xs text-muted">
+                {{ source.imageStatus }}
+              </p>
+              <UButton
+                v-if="source.images?.length"
+                label="识别图片（使用当前 AI）"
+                size="xs"
+                variant="outline"
+                class="mt-2"
+                :disabled="
+                  researchBusy || researchAutoBusy || researchWebBusy || researchAdviceBusy
+                "
+                @click="recognizeSourceImages(source)"
+              />
+              <details v-if="source.imageText" class="mt-2 text-sm">
+                <summary class="cursor-pointer">查看图片识别文字</summary>
+                <p class="whitespace-pre-wrap mt-2">{{ source.imageText }}</p>
+              </details>
               <p class="mt-1 text-xs text-muted">
                 {{ sourceKindLabels[source.contentKind || 'search-snippet'] }}
               </p>
@@ -1384,8 +1857,7 @@ onBeforeUnmount(() => {
                 }}
               </p>
               <p class="text-sm text-muted">
-                检索只显示帖子卡片。点击单条帖子下方的“读取正文和评论”后，才会打开该帖子并读取正文和已加载评论中的前
-                5 条高赞评论。
+                先汇总博主经验、共识与分歧，再结合简历给出整体修改方向及关键段落改写。调整来源后可重新生成。
               </p>
               <UButton
                 label="根据检索内容和简历生成修改意见"
@@ -1397,15 +1869,16 @@ onBeforeUnmount(() => {
                   !researchContentCount ||
                   analysisBusy ||
                   researchBusy ||
-                  researchWebBusy
+                  researchWebBusy ||
+                  researchAutoBusy
                 "
                 @click="createResearchAdvice"
               />
               <p class="text-xs text-muted">
                 {{
                   researchContentCount
-                    ? `已取得 ${researchContentCount} 条正文或摘要，将与当前简历一起提交给 AI。`
-                    : '尚无可用于分析的内容。请先检索，再手动读取帖子正文和评论，或在下方粘贴内容。'
+                    ? `已选用 ${researchContentCount} 条正文或已识别图片证据，将与简历、JD 一起提交给 AI。`
+                    : '尚无可用证据。请开始检索并分析，或手动读取、导入帖子内容。'
                 }}
               </p>
             </div>

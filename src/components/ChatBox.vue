@@ -174,20 +174,6 @@ function scramble(from: string, to: string) {
 let matrixInterval: ReturnType<typeof setInterval> | undefined
 let textInterval: ReturnType<typeof setInterval> | undefined
 
-watch(
-  () => open.value,
-  (_) => {
-    nextTick(() => {
-      const h = helper.shadowRoot?.querySelector<HTMLDivElement>('div.boss-chat-box')
-      if (!h) return
-      h.style.width = appearanceConf.value.chatBoxWidth + 'px'
-    })
-  },
-  {
-    immediate: true,
-  },
-)
-
 onMounted(() => {
   nextStep()
   matrixInterval = setInterval(nextStep, 120)

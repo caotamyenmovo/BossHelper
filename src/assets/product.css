@@ -346,6 +346,15 @@
 .research-result-column {
   min-width: 0;
 }
+.research-result-column {
+  position: sticky;
+  top: 20px;
+  max-height: calc(100dvh - 40px);
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-gutter: stable;
+  padding: 1px;
+}
 .research-sources,
 .advice-result {
   border: 1px solid var(--product-line);
@@ -374,7 +383,31 @@
   border-bottom: 0;
   padding-bottom: 0;
 }
-.research-sources article > a {
+.research-source-heading {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+.research-source-number {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  min-width: 28px;
+  height: 26px;
+  padding-inline: 5px;
+  border: 1px solid var(--product-line);
+  border-radius: 6px;
+  background: var(--product-tint);
+  color: var(--ui-primary);
+  font-size: 11px;
+  font-weight: 650;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+.research-source-heading > a {
+  min-width: 0;
+  padding-top: 2px;
   line-height: 1.6;
   font-size: 14px;
 }
@@ -429,6 +462,9 @@
 .delivery-shell {
   margin-top: 24px;
   max-width: calc(100vw - 32px);
+}
+.product-theme .boss-chat-box {
+  width: min(var(--boss-chat-width, 600px), calc(100vw - 16px));
 }
 .delivery-surface {
   border: 1px solid var(--product-line);
@@ -775,8 +811,29 @@
   border: 1px solid var(--product-line);
   background: var(--product-panel);
 }
-.product-theme .card-grid-overlay {
+.product-theme .card-strip-viewport {
+  position: relative;
+  --x: 0px;
+  --y: 0px;
+  --r: 0px;
+}
+.product-theme .card-strip-viewport > .card-grid-overlay {
+  display: block;
+  z-index: 10;
+  border-radius: 8px;
+}
+.product-theme .card-strip-viewport:focus-within > .card-grid-overlay {
   display: none;
+}
+@media (hover: none), (pointer: coarse) {
+  .product-theme .card-strip-viewport > .card-grid-overlay {
+    display: none;
+  }
+}
+@media (max-width: 760px) {
+  .delivery-shell {
+    margin-inline: auto !important;
+  }
 }
 /* Original deck interaction, with a small overlap and reserved lift clearance. */
 .product-theme .boss-helper-card .card-grid .job-card:nth-child(n) {
@@ -912,6 +969,12 @@
   .research-columns {
     grid-template-columns: minmax(0, 1fr);
   }
+  .research-result-column {
+    position: static;
+    max-height: none;
+    overflow: visible;
+    scrollbar-gutter: auto;
+  }
   .context-model {
     max-width: 30%;
   }
@@ -1013,4 +1076,22 @@
     overflow-x: auto;
     padding-inline: 12px;
   }
+}
+.research-plan {
+  border-top: 1px solid var(--ui-border);
+  padding-top: 10px;
+  font-size: 13px;
+}
+.research-plan > summary {
+  cursor: pointer;
+}
+.research-source-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--ui-text-muted);
+  font-variant-numeric: tabular-nums;
 }

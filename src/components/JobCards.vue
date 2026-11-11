@@ -17,6 +17,17 @@ const reducedMotion = usePreferredReducedMotion()
 const statusFilter = defineModel<'all' | 'error'>('statusFilter', { default: 'all' })
 
 const cards = ref<HTMLDivElement>()
+function moveBlur(event: PointerEvent) {
+  if (!appearanceConf.value.blurCard || event.pointerType !== 'mouse') return
+  const viewport = event.currentTarget as HTMLElement
+  const rect = viewport.getBoundingClientRect()
+  viewport.style.setProperty('--x', `${event.clientX - rect.left}px`)
+  viewport.style.setProperty('--y', `${event.clientY - rect.top}px`)
+  viewport.style.setProperty('--r', '120px')
+}
+function leaveBlur(event: PointerEvent) {
+  ;(event.currentTarget as HTMLElement).style.setProperty('--r', '0px')
+}
 const helper = useHelper()
 
 const filterItemsChecked = ref<Record<string, boolean>>({})
@@ -215,7 +226,14 @@ watch(
     />
   </DefineFollowing>
   <DefineFilter>
-    <UDropdownMenu :items="filterItems" :content="{ side: 'top' }" :ui="{ content: 'w-48' }">
+    <UDropdownMenu
+      :items="filterItems"
+      :content="{ side: 'bottom', align: 'end', sideFlip: false, collisionPadding: 8 }"
+      :ui="{
+        content: 'w-48 max-h-[min(24rem,var(--reka-dropdown-menu-content-available-height))]',
+        viewport: 'min-h-0 overscroll-contain',
+      }"
+    >
       <UButton
         size="md"
         color="neutral"
@@ -226,7 +244,7 @@ watch(
         aria-label="按处理状态过滤岗位"
       />
       <template #content-top>
-        <div class="p-2 flex flex-wrap gap-1">
+        <div class="p-2 flex shrink-0 flex-wrap gap-1 border-b border-default">
           <UButton size="sm" variant="outline" @click="filterSelectAll" label="全选" />
           <UButton size="sm" variant="outline" @click="filterToggle" label="反选" />
         </div>
@@ -305,31 +323,37 @@ watch(
       <template #following><FollowingControl /></template>
       <template #filter><FilterControl /></template>
     </JobTable>
-    <div
-      v-else
-      ref="cards"
-      class="card-grid"
-      :class="{ 'is-dragging': dragging }"
-      tabindex="0"
-      role="region"
-      aria-label="横向岗位卡片，使用左右方向键或拖动浏览"
-      @wheel="onWheel"
-      @scroll.passive="updateScroll"
-      @pointerdown="pointerDown"
-      @pointermove="pointerMove"
-      @pointerup="pointerEnd"
-      @pointercancel="pointerEnd"
-      @lostpointercapture="pointerEnd"
-      @click.capture="preventDragClick"
-      @keydown="onKey"
-      @dragstart.prevent
-    >
-      <JobCard
-        v-for="(job, index) in jobList"
-        :key="job.key"
-        :job="job"
-        :position="index + 1"
-        hover
+    <div v-else class="card-strip-viewport" @pointermove="moveBlur" @pointerleave="leaveBlur">
+      <div
+        ref="cards"
+        class="card-grid"
+        :class="{ 'is-dragging': dragging }"
+        tabindex="0"
+        role="region"
+        aria-label="横向岗位卡片，使用左右方向键或拖动浏览"
+        @wheel="onWheel"
+        @scroll.passive="updateScroll"
+        @pointerdown="pointerDown"
+        @pointermove="pointerMove"
+        @pointerup="pointerEnd"
+        @pointercancel="pointerEnd"
+        @lostpointercapture="pointerEnd"
+        @click.capture="preventDragClick"
+        @keydown="onKey"
+        @dragstart.prevent
+      >
+        <JobCard
+          v-for="(job, index) in jobList"
+          :key="job.key"
+          :job="job"
+          :position="index + 1"
+          hover
+        />
+      </div>
+      <div
+        v-if="appearanceConf.blurCard && jobList.length"
+        class="card-grid-overlay"
+        aria-hidden="true"
       />
     </div>
     <div v-if="appearanceConf.jobView !== 'table' && jobList.length" class="card-strip-footer">
